@@ -216,7 +216,7 @@ const getOrCreateUser = async (phoneNumber) => {
       // Registrar la transacción de créditos iniciales
       await TransaccionCredito.create({
         id_usuario: usuario.id,
-        cantidad: 10,
+        cantidad: 2,
         tipo: 'inicial',
         descripcion: 'Créditos iniciales por registro',
         fecha_transaccion: new Date()
