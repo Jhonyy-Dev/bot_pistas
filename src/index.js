@@ -5,6 +5,7 @@ const logger = require('./config/logger');
 const { sequelize, testConnection } = require('./config/database');
 const whatsappService = require('./services/whatsappService');
 const { importarMp3s } = require('./utils/fileUtils');
+const { iniciarServicioMantenimiento } = require('./services/maintenanceService');
 
 // Inicializar la aplicación express
 const app = express();
@@ -34,18 +35,27 @@ app.get('/status', (req, res) => {
 // Iniciar servidor
 async function iniciarServidor() {
   try {
-    // Probar conexión a la base de datos
-    logger.info('Probando conexión a la base de datos...');
-    const dbConectada = await testConnection();
+    // Verificar si se debe usar la base de datos
+    const usarDB = process.env.USAR_DB === 'true';
+    // Variable para controlar si la base de datos está conectada
+    let dbConectada = false;
     
-    if (!dbConectada) {
-      logger.error('No se pudo conectar a la base de datos. Verifica la configuración.');
-      process.exit(1);
+    if (usarDB) {
+      // Probar conexión a la base de datos
+      logger.info('Probando conexión a la base de datos...');
+      dbConectada = await testConnection();
+      
+      if (!dbConectada) {
+        logger.error('No se pudo conectar a la base de datos. Verifica la configuración.');
+        logger.warn('Continuando sin base de datos. Algunas funcionalidades estarán limitadas.');
+      } else {
+        // Sincronizar modelos con la base de datos
+        logger.info('Sincronizando modelos con la base de datos...');
+        await sequelize.sync();
+      }
+    } else {
+      logger.info('Modo sin base de datos activado. Usando solo Backblaze B2 para almacenamiento.');
     }
-    
-    // Sincronizar modelos con la base de datos
-    logger.info('Sincronizando modelos con la base de datos...');
-    await sequelize.sync();
     
     // Iniciar el servidor HTTP
     app.listen(PORT, () => {
@@ -56,6 +66,12 @@ async function iniciarServidor() {
       
       // Importar MP3s disponibles
       importarMp3Disponibles();
+      
+      // Iniciar el servicio de mantenimiento automático
+      if (usarDB && dbConectada) {
+        logger.info('Iniciando servicio de mantenimiento automático de la base de datos...');
+        iniciarServicioMantenimiento();
+      }
     });
   } catch (error) {
     logger.error(`Error al iniciar el servidor: ${error.message}`);

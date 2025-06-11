@@ -6,7 +6,13 @@ const { Usuario, Cancion, Descarga, TransaccionCredito } = require('../database/
 const cancionController = require('./cancionController');
 creditoController = require('./creditoController');
 const adminController = require('./adminController');
-const googleDriveService = require('../services/googleDriveService');
+const localMp3Service = require('../services/localMp3Service');
+const backblazeController = require('./backblazeController');
+const backblazeService = require('../services/backblazeService');
+const userStateManager = require('../models/userState');
+
+// Verificar si se debe usar la base de datos
+const usarDB = process.env.USAR_DB === 'true';
 
 // Almacena el estado de conversación de los usuarios
 const userStates = new Map();
@@ -53,8 +59,52 @@ const processMessage = async (socket, sender, message, rawMessage) => {
     // Actualizar el último acceso del usuario
     await usuario.update({ ultimo_acceso: new Date(), es_primera_vez: false });
     
-    // Reiniciar estado del usuario - siempre estará en modo 'inicio' para búsqueda directa
-    userStates.set(sender, { step: 'inicio' });
+    // Obtener el estado actual del usuario o crear uno nuevo
+    const userState = userStates.get(sender) || {};
+    
+    // Verificar si el usuario está esperando seleccionar una canción
+    if (userState.awaitingSongSelection && /^\d+$/.test(message)) {
+      const selectedIndex = parseInt(message) - 1;
+      
+      if (userState.songMatches && selectedIndex >= 0 && selectedIndex < userState.songMatches.length) {
+        // El usuario seleccionó una canción válida de la lista
+        const selectedMatch = userState.songMatches[selectedIndex];
+        const selectedSong = userState.selectedSong;
+        const fileName = selectedMatch.archivo_nombre || selectedMatch.file || selectedMatch.nombre;
+        
+        logger.info(`Usuario seleccionó la opción ${selectedIndex + 1}: ${fileName}`);
+        
+        try {
+          // Procesar y enviar la canción seleccionada
+          await processSongFile(socket, sender, fileName, selectedSong, usuario);
+          
+          // Limpiar el estado de selección
+          userState.awaitingSongSelection = false;
+          userState.songMatches = null;
+          userState.step = 'inicio';
+          userStates.set(sender, userState);
+          return;
+        } catch (error) {
+          logger.error(`Error al procesar la selección de canción: ${error.message}`);
+          await socket.sendMessage(sender, {
+            text: `❌ Lo sentimos, ocurrió un error al procesar la canción seleccionada.\n\n` +
+                  `No se han descontado créditos de tu cuenta.\n\n` +
+                  `Tienes ${usuario.creditos} créditos disponibles.`
+          });
+          return;
+        }
+      } else {
+        // Selección inválida
+        await socket.sendMessage(sender, {
+          text: `❌ Número inválido. Por favor, selecciona un número entre 1 y ${userState.songMatches.length}.`
+        });
+        return;
+      }
+    }
+    
+    // Si no está esperando selección, reiniciar el estado
+    userState.step = 'inicio';
+    userStates.set(sender, userState);
     
     // Registrar mensaje para depuración
     logger.info(`Mensaje recibido de ${sender}: "${mensajeOriginal}". Procesando...`);
@@ -104,25 +154,73 @@ const processMessage = async (socket, sender, message, rawMessage) => {
  */
 const getOrCreateUser = async (phoneNumber) => {
   try {
-    // Limpiar el número de teléfono (eliminar @s.whatsapp.net si existe)
-    const cleanNumber = phoneNumber.split('@')[0];
+    // Limpiar el número de teléfono para quitar el @s.whatsapp.net
+    const cleanPhone = phoneNumber.split('@')[0];
     
-    // Buscar usuario existente o crear uno nuevo
+    // Si no estamos usando la base de datos, usar el módulo de estado de usuario en memoria
+    if (!usarDB) {
+      // Inicializar el estado del usuario si no existe
+      if (!userStateManager.hasUser(cleanPhone)) {
+        userStateManager.initUser(cleanPhone, {
+          nombre: 'Usuario',
+          creditos: 10,
+          es_admin: false,
+          es_primera_vez: true,
+          fecha_registro: new Date(),
+          ultimo_acceso: new Date()
+        });
+        logger.info(`Nuevo usuario registrado en memoria: ${cleanPhone}`);
+      }
+      
+      // Actualizar el último acceso
+      userStateManager.updateUserProperty(cleanPhone, 'ultimo_acceso', new Date());
+      
+      // Devolver el objeto de usuario simulado
+      const userState = userStateManager.getUser(cleanPhone);
+      return {
+        id: cleanPhone,
+        numero_telefono: cleanPhone,
+        nombre: userState.nombre || 'Usuario',
+        creditos: userStateManager.getCredits(cleanPhone),
+        es_admin: userState.es_admin || false,
+        es_primera_vez: userState.es_primera_vez || false,
+        fecha_registro: userState.fecha_registro || new Date(),
+        ultimo_acceso: userState.ultimo_acceso || new Date(),
+        update: async (data) => {
+          // Simular la función update de Sequelize
+          Object.keys(data).forEach(key => {
+            userStateManager.updateUserProperty(cleanPhone, key, data[key]);
+          });
+          return Promise.resolve();
+        }
+      };
+    }
+    
+    // Si estamos usando la base de datos, comportamiento original
     const [usuario, created] = await Usuario.findOrCreate({
-      where: { numero_telefono: cleanNumber },
+      where: { numero_telefono: cleanPhone },
       defaults: {
-        creditos: 0,
+        nombre: 'Usuario',
+        creditos: 10, // Créditos iniciales para nuevos usuarios
+        es_admin: false,
+        es_primera_vez: true,
         fecha_registro: new Date(),
-        ultimo_acceso: new Date(),
-        es_primera_vez: true
+        ultimo_acceso: new Date()
       }
     });
     
+    // Si es un usuario nuevo, registrar en el log
     if (created) {
-      logger.info(`Nuevo usuario registrado: ${cleanNumber}`);
+      logger.info(`Nuevo usuario registrado: ${cleanPhone}`);
       
-      // Dar créditos de bienvenida
-      await creditoController.agregarCredito(cleanNumber, 2, 'regalo', 'Créditos de bienvenida');
+      // Registrar la transacción de créditos iniciales
+      await TransaccionCredito.create({
+        id_usuario: usuario.id,
+        cantidad: 10,
+        tipo: 'inicial',
+        descripcion: 'Créditos iniciales por registro',
+        fecha_transaccion: new Date()
+      });
     }
     
     return usuario;
@@ -136,12 +234,82 @@ const getOrCreateUser = async (phoneNumber) => {
  * Maneja los comandos que comienzan con !
  */
 const handleCommand = async (socket, sender, message, usuario) => {
-  const command = message.split(' ')[0].toLowerCase();
-  const args = message.split(' ').slice(1).join(' ');
+  // Registrar el comando recibido para depuración
+  logger.info(`Procesando comando: "${message}"`);
   
-  // Comprobar si es un comando de administrador (comienzan con !admin:)
+  // Caso especial para el comando !admin:addcredits o admin:addcredits (con o sin !)
+  // Este formato: !admin:addcredits 1234567890 5 o admin:addcredits 1234567890 5
+  if (message.startsWith('!admin:addcredits') || message.startsWith('admin:addcredits')) {
+    // Extraer todo el mensaje y normalizarlo
+    const fullCommand = message.trim();
+    
+    // Usar expresión regular para extraer los números directamente
+    // Busca un patrón como: [comando] [número] [cantidad]
+    const regex = /(?:!?admin:addcredits)\s+(\d+)\s+(\d+)/;
+    const matches = fullCommand.match(regex);
+    
+    logger.info(`Comando addcredits detectado: "${fullCommand}", Matches: ${JSON.stringify(matches)}`);
+    
+    if (matches && matches.length >= 3) {
+      const numero = matches[1];
+      const cantidad = parseInt(matches[2]);
+      
+      logger.info(`Procesando comando especial: addcredits, numero: ${numero}, cantidad: ${cantidad}`);
+      
+      if (!isNaN(cantidad)) {
+        await adminController.procesarComandoAdmin(socket, sender, '!admin:addcredits', `${numero} ${cantidad}`);
+        return;
+      }
+    } else {
+      // Si la expresión regular no funcionó, intentar con un enfoque alternativo
+      // Normalizar espacios y caracteres especiales
+      const normalizedCommand = fullCommand
+        .replace(/\s+/g, ' ')
+        .replace(/[\u00A0\u1680\u180E\u2000-\u200A\u2028\u2029\u202F\u205F\u3000]/g, ' ');
+      
+      const parts = normalizedCommand.split(' ').filter(p => p.trim() !== '');
+      logger.info(`Intento alternativo - partes: ${JSON.stringify(parts)}`);
+      
+      if (parts.length >= 3) {
+        const numero = parts[1];
+        const cantidad = parseInt(parts[2]);
+        
+        logger.info(`Procesando comando alternativo: ${parts[0]}, numero: ${numero}, cantidad: ${cantidad}`);
+        
+        if (!isNaN(cantidad)) {
+          await adminController.procesarComandoAdmin(socket, sender, '!admin:addcredits', `${numero} ${cantidad}`);
+          return;
+        }
+      }
+      
+      // Si llegamos aquí, no pudimos procesar el comando correctamente
+      logger.error(`No se pudo procesar el comando addcredits: "${fullCommand}"`);
+      await socket.sendMessage(sender, { 
+        text: '⚠️ Formato incorrecto. Uso: !admin:addcredits [numero] [cantidad]\nEjemplo: !admin:addcredits 1234567890 5' 
+      });
+      return;
+    }
+  }
+
+  
+  // Procesamiento normal para otros comandos
+  const parts = message.trim().split(' ');
+  const command = parts[0].toLowerCase();
+  const args = parts.slice(1).join(' ');
+  
+  logger.info(`Comando: "${command}", Args: "${args}"`);
+  
+  // Comprobar si es un comando de administrador (comienzan con !admin: o admin:)
   if (command.startsWith('!admin:')) {
     await adminController.procesarComandoAdmin(socket, sender, command, args);
+    return;
+  }
+  
+  // Permitir comandos admin sin el prefijo !
+  if (command.startsWith('admin:')) {
+    // Convertir admin: a !admin: para mantener compatibilidad
+    const fixedCommand = '!' + command;
+    await adminController.procesarComandoAdmin(socket, sender, fixedCommand, args);
     return;
   }
   
@@ -152,6 +320,7 @@ const handleCommand = async (socket, sender, message, usuario) => {
       break;
       
     case '!creditos':
+    case '!credito':
       await sendCreditInfo(socket, sender, usuario);
       break;
       
@@ -557,14 +726,14 @@ const handleSongSelection = async (socket, sender, message, usuario, userState) 
     // Verificar si el usuario tiene créditos suficientes
     if (usuario.creditos < 1) {
       await socket.sendMessage(sender, { 
-        text: '❌ No tienes créditos suficientes para descargar esta canción. Contacta al administrador para obtener más créditos.' 
+        text: '❌ No tienes créditos suficientes para descargar esta canción.\n\n*Contacta al administrador para obtener más créditos.*' 
       });
       return;
     }
     
     // Enviar mensaje de procesamiento
     await socket.sendMessage(sender, { 
-      text: `⏳ Preparando tu canción "${selectedSong.nombre}"...\nEsto puede tomar unos segundos.` 
+      text: `⏳ *Preparando tu canción* _"${selectedSong.nombre}"..._\n*Esto puede tomar unos segundos.*` 
     });
     
     // Preparar datos para el envío del archivo
@@ -609,6 +778,20 @@ const handleSongSelection = async (socket, sender, message, usuario, userState) 
         }
         
         logger.info(`Éxito! Archivo descargado desde Google Drive: ${fileName} (${buffer.length} bytes)`);
+        
+        // Registrar la descarga en la base de datos
+        try {
+          await Descarga.create({
+            id_usuario: usuario.id,
+            id_cancion: selectedSong.id,
+            fecha_descarga: new Date(),
+            origen: 'google_drive' // Registrar origen de la descarga
+          });
+          logger.info(`Descarga registrada para usuario ${usuario.id} - canción ${selectedSong.id} - origen: Google Drive`);
+        } catch (dbError) {
+          logger.error(`Error al registrar descarga en DB: ${dbError.message}`);
+          // No interrumpimos el flujo por un error en el registro
+        }
       } catch (driveError) {
         logger.error(`Error al descargar de Google Drive: ${driveError.message}`);
         throw new Error(`Error al obtener la canción de Google Drive: ${driveError.message}`);
@@ -684,155 +867,377 @@ const handleSongSelection = async (socket, sender, message, usuario, userState) 
  * Maneja la solicitud directa de una canción por nombre sin mostrar resultados
  * Esta función busca la mejor coincidencia y envía directamente el archivo MP3
  */
-const handleDirectSongRequest = async (socket, sender, searchTerm, usuario) => {
+async function handleDirectSongRequest(socket, sender, searchTerm, usuario) {
   try {
-    // Verificar si el usuario tiene créditos disponibles
+    // Verificar si el usuario tiene créditos suficientes
     if (usuario.creditos <= 0) {
       await socket.sendMessage(sender, {
-        text: '❌ No tienes créditos disponibles para descargar canciones.\n\n' +
-              'Para obtener más créditos, contacta al administrador.'
+        text: `❌ No tienes créditos suficientes para descargar canciones.\n\n` +
+              `Para obtener más créditos, contacta al administrador.`
       });
       return;
     }
-    
-    // Buscar la canción por nombre
-    const canciones = await cancionController.buscarCanciones(searchTerm);
-    
-    // Si no hay resultados
-    if (!canciones || !canciones.length) {
-      // Seleccionar una respuesta aleatoria para dar variedad
-      const randomIndex = Math.floor(Math.random() * respuestasSinCoincidencia.length);
-      const respuesta = respuestasSinCoincidencia[randomIndex];
-      
-      await socket.sendMessage(sender, { 
-        text: `❌ ${respuesta}\n\nBuscaste: "${searchTerm}"` 
-      });
-      return;
-    }
-    
-    // Tomar el primer resultado (la coincidencia más exacta)
-    const selectedSong = canciones[0];
-    
-    logger.info(`Información de la canción seleccionada:`);
-    logger.info(JSON.stringify(selectedSong));
-    
-    // Extraer el ID de Google Drive de la URL o usar el campo url_externa directamente
-    // Esta es la parte crítica que necesitamos mejorar
-    let googleDriveId = null;
-    
-    // Verificar diferentes escenarios de almacenamiento de IDs
-    if (selectedSong.url_externa && selectedSong.url_externa !== 'No tiene URL externa') {
-      // Caso 1: La url_externa ya es un ID de Google Drive directo
-      if (/^[a-zA-Z0-9_-]{25,44}$/.test(selectedSong.url_externa.trim())) {
-        googleDriveId = selectedSong.url_externa.trim();
-        logger.info(`ID de Google Drive encontrado directamente: ${googleDriveId}`);
-      } 
-      // Caso 2: La URL es una URL completa de Google Drive con ID en ella
-      else if (selectedSong.url_externa.includes('drive.google.com')) {
-        const urlObj = new URL(selectedSong.url_externa);
-        // URL formato 1: https://drive.google.com/file/d/ID_AQUI/view
-        if (selectedSong.url_externa.includes('/file/d/')) {
-          const matches = selectedSong.url_externa.match(/\/file\/d\/([a-zA-Z0-9_-]{25,44})\//);
-          if (matches && matches[1]) {
-            googleDriveId = matches[1];
-            logger.info(`ID de Google Drive extraído de URL completa: ${googleDriveId}`);
-          }
-        } 
-        // URL formato 2: https://drive.google.com/open?id=ID_AQUI
-        else if (urlObj.searchParams.has('id')) {
-          googleDriveId = urlObj.searchParams.get('id');
-          logger.info(`ID de Google Drive extraído de parámetro URL: ${googleDriveId}`);
-        }
-      }
-      // Caso 3: Es una URL cortada o un formato diferente, buscar un patrón de ID
-      else {
-        const idMatches = selectedSong.url_externa.match(/([a-zA-Z0-9_-]{25,44})/);
-        if (idMatches && idMatches[1]) {
-          googleDriveId = idMatches[1];
-          logger.info(`ID de Google Drive extraído por patrón: ${googleDriveId}`);
-        }
-      }
-    }
-    
-    // Si no se pudo extraer un ID válido
-    if (!googleDriveId) {
-      logger.error(`No se pudo extraer un ID válido de Google Drive para: ${selectedSong.nombre}`);
-      logger.error(`URL externa registrada: ${selectedSong.url_externa || 'No disponible'}`);
-      
-      await socket.sendMessage(sender, {
-        text: `❌ Lo sentimos, la canción "${selectedSong.nombre}" no está disponible en este momento.\n\n` +
-              `No se han descontado créditos de tu cuenta.\n\n` +
-              `Tienes ${usuario.creditos} créditos disponibles.`
-      });
-      return;
-    }
-    
-    // Preparar el archivo para descarga
-    let buffer;
-    const artista = selectedSong.artista ? selectedSong.artista : 'Desconocido';
-    // Sanitizar el nombre del archivo para evitar problemas
-    const sanitizedName = selectedSong.nombre.replace(/[\/:*?"<>|]/g, '_').substring(0, 60);
-    const fileName = `${artista} - ${sanitizedName}.mp3`;
-    const caption = `🎵 *${selectedSong.nombre}*\n👨‍🎤 ${artista}\n\nSubido por MúsicaKit`;
-    
-    // Notificar al usuario que estamos preparando su canción
+
+    // Notificar al usuario que estamos buscando
     await socket.sendMessage(sender, {
-      text: `⏳ Preparando tu canción "${selectedSong.nombre}"...\nEsto puede tomar unos segundos.`
+      text: `🔍 Buscando canciones que coincidan con "${searchTerm}"...`
+    });
+
+    // Buscar canciones en Backblaze B2 y en la base de datos
+    let canciones = [];
+    try {
+      canciones = await backblazeController.buscarCanciones(searchTerm, 10);
+      logger.info(`Se encontraron ${canciones ? canciones.length : 0} canciones para "${searchTerm}"`);
+    } catch (searchError) {
+      logger.error(`Error en búsqueda de canciones: ${searchError.message}`);
+      // Continuar con un array vacío para mostrar mensaje de no encontrado
+    }
+
+    // Verificar que canciones sea un array válido
+    if (!canciones || !Array.isArray(canciones)) {
+      logger.error(`Resultado de búsqueda inválido: ${typeof canciones}`);
+      canciones = [];
+    }
+
+    if (canciones.length === 0) {
+      // No se encontraron canciones
+      await socket.sendMessage(sender, {
+        text: `❌ No encontré ninguna canción que coincida con "${searchTerm}".\n\n` +
+              `Intenta con otro nombre o artista.`
+      });
+      return;
+    }
+
+    // Preparar mensaje con opciones
+    let optionsMessage = `🎵 *RESULTADOS DE BÚSQUEDA*\n\n` +
+                       `Encontré ${canciones.length} ${canciones.length === 1 ? 'canción' : 'canciones'} ` +
+                       `para "${searchTerm}":\n\n`;
+
+    // Preparar el objeto para almacenar la información de las canciones seleccionadas
+    const selectedSong = {};
+
+    // Verificar que cada canción tenga la información necesaria
+    for (let i = 0; i < canciones.length; i++) {
+      const match = canciones[i];
+      
+      // Verificar que match sea un objeto válido
+      if (!match) {
+        logger.error(`Canción en posición ${i} es undefined o null`);
+        continue;
+      }
+      
+      // Obtener el nombre del archivo con validación
+      let fileName = '';
+      if (match.archivo_nombre) {
+        fileName = match.archivo_nombre;
+      } else if (match.file) {
+        fileName = match.file;
+      } else if (match.nombre) {
+        fileName = match.nombre;
+      } else {
+        logger.error(`Canción en posición ${i} no tiene nombre de archivo válido: ${JSON.stringify(match)}`);
+        continue;
+      }
+      
+      // Extraer nombre de la canción del nombre del archivo
+      const nombreCancion = fileName.replace(/\.mp3$/i, '').replace(/_/g, ' ');
+      
+      // Añadir a las opciones
+      optionsMessage += `${i + 1}. ${nombreCancion}\n`;
+      
+      // Guardar información de la canción seleccionada
+      selectedSong[fileName] = {
+        id: match.id || null,
+        nombre: nombreCancion,
+        artista: match.artista || 'Desconocido',
+        archivo_nombre: fileName,
+        es_backblaze: match.es_backblaze || false
+      };
+    }
+
+    // Añadir instrucciones al mensaje
+    optionsMessage += `\n📱 *Responde con el número* de la canción que quieres descargar.\n` +
+                     `💰 Costo: 1 crédito. Tienes ${usuario.creditos} créditos disponibles.`;
+
+    // Guardar el estado del usuario
+    if (!userStates.has(sender)) {
+      userStates.set(sender, {});
+    }
+    
+    const userState = userStates.get(sender);
+    userState.songMatches = canciones;
+    userState.selectedSong = selectedSong;
+    userState.awaitingSongSelection = true;
+    userState.lastActivity = Date.now();
+    
+    // Enviar mensaje con opciones
+    await socket.sendMessage(sender, { text: optionsMessage });
+  } catch (error) {
+    logger.error(`Error al manejar solicitud directa de canción: ${error.message}`);
+    await socket.sendMessage(sender, {
+      text: `❌ Lo sentimos, ocurrió un error al procesar tu solicitud.\n\n` +
+            `No se han descontado créditos de tu cuenta.\n\n` +
+            `Tienes ${usuario.creditos} créditos disponibles.`
+    });
+  }
+};
+
+/**
+ * Procesa un archivo de canción seleccionado y lo envía al usuario
+ */
+async function processSongFile(socket, sender, foundFileName, selectedSong, usuario) {
+  try {
+    // Obtener información de la canción seleccionada
+    let song;
+    
+    if (selectedSong && typeof selectedSong === 'object') {
+      // Si selectedSong es un objeto, intentar obtener la información de la canción
+      if (selectedSong[foundFileName]) {
+        // Si existe una entrada directa con el nombre del archivo
+        song = selectedSong[foundFileName];
+      } else {
+        // Buscar en todas las claves por si el nombre del archivo está almacenado de forma diferente
+        const keys = Object.keys(selectedSong);
+        for (const key of keys) {
+          if (key.toLowerCase() === foundFileName.toLowerCase() || 
+              (selectedSong[key].archivo_nombre && 
+               selectedSong[key].archivo_nombre.toLowerCase() === foundFileName.toLowerCase())) {
+            song = selectedSong[key];
+            break;
+          }
+        }
+      }
+    }
+    
+    // Si no se encontró información, crear un objeto básico
+    if (!song) {
+      song = { 
+        nombre: foundFileName.replace(/\.mp3$/i, '').replace(/_/g, ' '),
+        archivo_nombre: foundFileName,
+        es_backblaze: true // Asumimos que es de Backblaze si no tenemos más información
+      };
+      logger.info(`Creando información básica para la canción: ${foundFileName}`);
+    }
+    
+    // Verificar si es un archivo de Backblaze B2
+    if (song.es_backblaze) {
+      logger.info(`Procesando archivo de Backblaze B2: ${foundFileName}`);
+      
+      try {
+        // Notificar al usuario que estamos descargando
+        await socket.sendMessage(sender, {
+          text: `⏳ Descargando "${song.nombre}" desde nuestro servidor en la nube...\nEsto puede tomar unos segundos.`
+        });
+        
+        // Descargar el archivo desde Backblaze B2
+        const { buffer, rutaArchivo } = await backblazeController.descargarCancion(foundFileName);
+        
+        // Enviar la canción al usuario
+        await sendSongToUser(socket, sender, buffer, foundFileName, song, usuario);
+        
+        // Registrar reproducción si es necesario
+        await backblazeController.registrarReproduccion(song, usuario.numero_telefono);
+        
+        // Limpiar archivos temporales después de un tiempo
+        setTimeout(() => {
+          try {
+            if (fs.existsSync(rutaArchivo)) {
+              fs.unlinkSync(rutaArchivo);
+              logger.info(`Archivo temporal eliminado: ${rutaArchivo}`);
+            }
+          } catch (cleanupError) {
+            logger.error(`Error al limpiar archivo temporal: ${cleanupError.message}`);
+          }
+        }, 5 * 60 * 1000); // 5 minutos
+      } catch (backblazeError) {
+        logger.error(`Error al procesar archivo de Backblaze B2: ${backblazeError.message}`);
+        await socket.sendMessage(sender, {
+          text: `❌ Lo sentimos, ocurrió un error al descargar la canción desde nuestro servidor en la nube.\n\n` +
+                `No se han descontado créditos de tu cuenta.\n\n` +
+                `Tienes ${usuario.creditos} créditos disponibles.`
+        });
+        throw backblazeError;
+      }
+    } else {
+      // Procesar archivo local
+      logger.info(`Procesando archivo local: ${foundFileName}`);
+      
+      const mp3Folder = process.env.MP3_FOLDER || './mp3';
+      const filePath = path.join(mp3Folder, foundFileName);
+      
+      // Verificar si el archivo existe localmente
+      const fileExists = await fs.pathExists(filePath);
+      
+      if (!fileExists) {
+        logger.error(`Archivo local no encontrado: ${filePath}`);
+        await socket.sendMessage(sender, {
+          text: `❌ Lo sentimos, no se encontró el archivo de la canción seleccionada.\n\n` +
+                `No se han descontado créditos de tu cuenta.\n\n` +
+                `Tienes ${usuario.creditos} créditos disponibles.`
+        });
+        return;
+      }
+      
+      // Leer el archivo como buffer
+      const buffer = await fs.readFile(filePath);
+      
+      // Enviar la canción al usuario
+      await sendSongToUser(socket, sender, buffer, foundFileName, song, usuario);
+    }
+  } catch (error) {
+    logger.error(`Error al procesar archivo de canción: ${error.message}`);
+    throw error;
+  }
+}
+
+/**
+ * Procesa un archivo de canción seleccionado y lo envía al usuario
+ * @param {Object} socket - Socket de WhatsApp
+ * @param {string} sender - ID del remitente
+ * @param {string} foundFileName - Nombre del archivo encontrado
+ * @param {Object} selectedSong - Información de la canción seleccionada
+ * @param {Object} usuario - Información del usuario
+ * @returns {Promise<void>}
+ */
+async function processSongFile(socket, sender, foundFileName, selectedSong, usuario) {
+  try {
+    // Obtener la información de la canción seleccionada
+    const song = selectedSong[foundFileName];
+    if (!song) {
+      throw new Error(`No se encontró información para la canción: ${foundFileName}`);
+    }
+    
+    logger.info(`Procesando canción: ${song.nombre} (${foundFileName})`);
+    
+    // Verificar si el usuario tiene créditos suficientes
+    if (usuario.creditos <= 0) {
+      await socket.sendMessage(sender, {
+        text: `❌ No tienes créditos suficientes para descargar canciones.\n\n` +
+              `Para obtener más créditos, contacta al administrador.`
+      });
+      return;
+    }
+    
+    // Verificar si la canción es de Backblaze o local
+    let buffer;
+    let rutaArchivo;
+    
+    if (song.es_backblaze) {
+      // Descargar desde Backblaze
+      logger.info(`Descargando canción desde Backblaze: ${foundFileName}`);
+      const result = await backblazeController.descargarCancion(foundFileName);
+      buffer = result.buffer;
+      rutaArchivo = result.rutaArchivo;
+    } else {
+      // Buscar en archivos locales
+      logger.info(`Buscando canción en archivos locales: ${foundFileName}`);
+      rutaArchivo = await localMp3Service.findExactSong(foundFileName);
+      
+      if (!rutaArchivo) {
+        throw new Error(`No se encontró el archivo local: ${foundFileName}`);
+      }
+      
+      // Leer el archivo como buffer
+      buffer = await fs.readFile(rutaArchivo);
+    }
+    
+    // Enviar la canción al usuario
+    await sendSongToUser(socket, sender, buffer, foundFileName, song, usuario);
+    
+    return true;
+  } catch (error) {
+    logger.error(`Error al procesar archivo de canción: ${error.message}`);
+    throw error;
+  }
+}
+
+/**
+ * Función auxiliar para enviar una canción al usuario
+ * Versión optimizada para mayor velocidad
+ */
+async function sendSongToUser(socket, sender, buffer, fileName, song, usuario) {
+  try {
+    // Preparar el archivo para descarga con un caption más ligero
+    const caption = `🎵 *${song.nombre.toUpperCase()}*\n\n*Subido por Jhonatan*`;
+    
+    // Iniciar la limpieza de archivos temporales en segundo plano
+    // No esperamos a que termine para continuar con el flujo principal
+    const cleanupPromise = localMp3Service.cleanupTempFiles()
+      .catch(err => logger.error(`Error al limpiar archivos temporales: ${err.message}`));
+    
+    // Enviar mensaje de preparación y archivo en paralelo
+    // Esto reduce el tiempo de espera percibido por el usuario
+    const preparingMessage = socket.sendMessage(sender, {
+      text: `⏳ *Preparando tu canción . . .*\n*Esto puede tomar unos segundos.*`
     });
     
-    // Descargar directamente desde Google Drive usando el ID extraído
-    try {
-      logger.info(`Iniciando descarga desde Google Drive con ID: ${googleDriveId}`);
-      const driveResult = await googleDriveService.downloadFile(googleDriveId, fileName);
-      buffer = driveResult.buffer;
-      
-      if (!buffer || buffer.length === 0) {
-        throw new Error('El archivo descargado está vacío');
-      }
-      
-      logger.info(`Éxito! Archivo descargado desde Google Drive: ${fileName} (${buffer.length} bytes)`);
-    } catch (driveError) {
-      logger.error(`Error al descargar de Google Drive: ${driveError.message}`);
-      throw new Error(`Error al obtener la canción de Google Drive: ${driveError.message}`);
-    }
-    
-    // Enviar el archivo al usuario
-    await socket.sendMessage(sender, {
-      document: buffer,
-      mimetype: 'audio/mpeg',
-      fileName: fileName,
-      caption
+    // Preparar el envío del archivo inmediatamente, sin esperar al mensaje anterior
+    const sendFilePromise = preparingMessage.then(() => {
+      // Enviar el archivo al usuario con prioridad alta
+      return socket.sendMessage(sender, {
+        document: buffer,
+        mimetype: 'audio/mpeg',
+        fileName: fileName,
+        caption: caption
+      });
     }).catch(sendError => {
       logger.error(`Error al enviar archivo por WhatsApp: ${sendError.message}`);
       throw new Error(`Error al enviar el archivo por WhatsApp: ${sendError.message}`);
     });
     
-    // Programar limpieza de archivos temporales
-    setTimeout(() => {
-      googleDriveService.cleanupTempFiles()
-        .catch(err => logger.error(`Error al limpiar archivos temporales: ${err.message}`));
-    }, 5 * 60 * 1000);
+    // Esperar a que se envíe el archivo
+    await sendFilePromise;
     
     // Descontar el crédito DESPUÉS de enviar exitosamente
-    await creditoController.descontarCredito(usuario.numero_telefono, selectedSong.id);
+    try {
+      logger.info(`Descontando crédito a usuario: ${usuario.numero_telefono}`);
+      
+      // Descontar crédito directamente del usuario sin depender del ID de canción
+      await Usuario.decrement('creditos', { 
+        where: { numero_telefono: usuario.numero_telefono },
+        by: 1
+      });
+      
+      logger.info(`Crédito descontado exitosamente`);
+      
+      // Si tenemos un ID de canción válido, registrar la descarga
+      if (song.id) {
+        try {
+          await Descarga.update(
+            { origen: 'local' },
+            { where: { 
+              id_usuario: usuario.id, 
+              id_cancion: song.id,
+              fecha_descarga: { [Op.gte]: new Date(new Date().setMinutes(new Date().getMinutes() - 5)) } // Descargas en los últimos 5 minutos
+            }}
+          );
+          logger.info(`Origen de descarga registrado: local para canción ${song.id}`);
+        } catch (dbError) {
+          logger.error(`Error al registrar origen de descarga: ${dbError.message}`);
+          // No interrumpimos el flujo por un error en el registro
+        }
+      } else {
+        // Registrar descarga de archivo local sin ID de canción
+        logger.info(`Descarga de archivo local sin ID de canción: ${fileName}`);
+      }
+    } catch (creditError) {
+      logger.error(`Error al descontar crédito: ${creditError.message}`);
+      // No interrumpimos el flujo por un error en el descuento de créditos
+    }
     
     // Recarga los datos del usuario para tener los créditos actualizados
     const usuarioActualizado = await Usuario.findOne({ where: { numero_telefono: usuario.numero_telefono } });
     
-    // Enviar mensaje de confirmación
-    setTimeout(async () => {
-      await socket.sendMessage(sender, { 
-        text: `✅ ¡Listo! Se ha descontado 1 crédito de tu cuenta.\nAhora tienes ${usuarioActualizado.creditos} créditos disponibles.` 
-      });
-    }, 1000);
-    
-  } catch (error) {
-    logger.error(`Error al procesar petición directa de canción: ${error.message}`);
-    await socket.sendMessage(sender, { 
-      text: '❌ Ocurrió un error al obtener la canción. No te preocupes, no se han descontado créditos. Por favor, intenta nuevamente.' 
+    // Enviar mensaje de confirmación con créditos restantes
+    await socket.sendMessage(sender, {
+      text: `✅ ¡Listo! Has descargado "${song.nombre}".\n\n` +
+            `*Te quedan ${usuarioActualizado.creditos} créditos disponibles.*`
     });
+  } catch (error) {
+    logger.error(`Error en sendSongToUser: ${error.message}`);
+    throw error;
   }
-};
+}
 
 module.exports = {
   processMessage

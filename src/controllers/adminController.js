@@ -21,12 +21,71 @@ const esAdministrador = (numeroTelefono) => {
  */
 const procesarComandoAdmin = async (socket, sender, command, args) => {
   if (!esAdministrador(sender)) {
+    logger.warn(`Intento de acceso no autorizado a comando admin desde ${sender}`);
     await socket.sendMessage(sender, { 
       text: '⛔ No tienes permisos para ejecutar comandos de administrador.' 
     });
     return;
   }
   
+  logger.info(`Procesando comando admin: "${command}" con args: "${args}"`);
+  
+  // Manejar caso especial para addcredits - extraer argumentos del mensaje completo
+  if (command === '!admin:addcredits') {
+    // Limpiar y normalizar los argumentos para manejar caracteres especiales
+    // Primero reemplazamos caracteres no estándar y espacios múltiples
+    const argsNormalizados = args.trim()
+      .replace(/\s+/g, ' ')        // Normalizar espacios
+      .replace(/[\u00A0\u1680\u180E\u2000-\u200A\u2028\u2029\u202F\u205F\u3000]/g, ' '); // Reemplazar espacios Unicode
+    
+    // Extraer número y cantidad directamente con una expresión regular
+    const regex = /(\d+)\s+(\d+)/;
+    const matches = argsNormalizados.match(regex);
+    
+    logger.info(`Comando addcredits: Args normalizados: "${argsNormalizados}", Matches: ${JSON.stringify(matches)}`);
+    
+    if (matches && matches.length >= 3) {
+      const numeroTelefono = matches[1];
+      const cantidad = parseInt(matches[2]);
+      
+      logger.info(`Comando addcredits: Número extraído: ${numeroTelefono}, Cantidad extraída: ${cantidad}`);
+      
+      if (!isNaN(cantidad) && cantidad > 0) {
+        logger.info(`Comando addcredits: Parámetros válidos, ejecutando agregarCreditosUsuario`);
+        await agregarCreditosUsuario(socket, sender, numeroTelefono, cantidad);
+        return;
+      } else {
+        logger.error(`Comando addcredits: Cantidad inválida: ${cantidad}`);
+      }
+    } else {
+      // Intento alternativo con split normal
+      const partes = argsNormalizados.split(' ').filter(p => p.trim() !== '');
+      logger.info(`Comando addcredits: Intento alternativo - partes: ${JSON.stringify(partes)}`);
+      
+      if (partes.length >= 2) {
+        const numeroTelefono = partes[0];
+        const cantidad = parseInt(partes[1]);
+        
+        logger.info(`Comando addcredits: Número: ${numeroTelefono}, Cantidad: ${cantidad}`);
+        
+        if (!isNaN(cantidad) && cantidad > 0) {
+          logger.info(`Comando addcredits: Parámetros válidos, ejecutando agregarCreditosUsuario`);
+          await agregarCreditosUsuario(socket, sender, numeroTelefono, cantidad);
+          return;
+        }
+      }
+      
+      logger.error(`Comando addcredits: No se pudieron extraer parámetros válidos de: "${args}"`);
+    }
+    
+    // Si llegamos aquí, el formato es incorrecto
+    await socket.sendMessage(sender, { 
+      text: '⚠️ Formato incorrecto. Uso: !admin:addcredits [numero] [cantidad]\nEjemplo: !admin:addcredits 1234567890 5' 
+    });
+    return;
+  }
+  
+  // Procesar otros comandos normalmente
   switch (command) {
     case '!admin:help':
       await enviarAyudaAdmin(socket, sender);
@@ -34,10 +93,6 @@ const procesarComandoAdmin = async (socket, sender, command, args) => {
       
     case '!admin:stats':
       await enviarEstadisticas(socket, sender);
-      break;
-      
-    case '!admin:addcredits':
-      await agregarCreditosUsuario(socket, sender, args);
       break;
       
     case '!admin:usuario':
@@ -149,61 +204,106 @@ const enviarEstadisticas = async (socket, sender) => {
 
 /**
  * Agrega créditos a un usuario
+ * @param {Object} socket - Socket de WhatsApp
+ * @param {string} sender - Número del remitente
+ * @param {string} numeroTelefono - Número de teléfono del usuario a agregar créditos
+ * @param {number} cantidad - Cantidad de créditos a agregar
  */
-const agregarCreditosUsuario = async (socket, sender, args) => {
+const agregarCreditosUsuario = async (socket, sender, numeroTelefono, cantidad) => {
   try {
-    const argArray = args.split(' ');
+    logger.info(`[ADMIN] Iniciando proceso para agregar ${cantidad} créditos a usuario ${numeroTelefono}`);
     
-    if (argArray.length < 2) {
-      await socket.sendMessage(sender, { 
-        text: '⚠️ Formato incorrecto. Uso: !admin:addcredits [numero] [cantidad]' 
-      });
-      return;
-    }
-    
-    const numeroTelefono = argArray[0];
-    const cantidad = parseInt(argArray[1]);
-    
+    // Validar que la cantidad sea un número positivo
     if (isNaN(cantidad) || cantidad <= 0) {
+      logger.error(`[ADMIN] Cantidad inválida: ${cantidad}`);
       await socket.sendMessage(sender, { 
         text: '⚠️ La cantidad debe ser un número positivo.' 
       });
       return;
     }
     
+    // Limpiar el número de teléfono (quitar @s.whatsapp.net si existe)
+    const numeroLimpio = numeroTelefono.split('@')[0];
+    logger.info(`[ADMIN] Número original: ${numeroTelefono}, Número limpio: ${numeroLimpio}`);
+    
     // Buscar usuario
+    logger.info(`[ADMIN] Buscando usuario con número: ${numeroLimpio}`);
     const usuario = await Usuario.findOne({
-      where: { numero_telefono: numeroTelefono }
+      where: { numero_telefono: numeroLimpio }
     });
     
     if (!usuario) {
+      logger.error(`[ADMIN] Usuario no encontrado: ${numeroLimpio}`);
       await socket.sendMessage(sender, { 
-        text: `❌ No se encontró ningún usuario con el número ${numeroTelefono}.` 
+        text: `❌ No se encontró ningún usuario con el número ${numeroLimpio}.` 
       });
       return;
     }
     
-    // Agregar créditos
-    const resultado = await creditoController.agregarCredito(
-      numeroTelefono,
-      cantidad,
-      'regalo',
-      'Créditos agregados por administrador'
-    );
+    logger.info(`[ADMIN] Usuario encontrado: ${usuario.nombre} (ID: ${usuario.id}), créditos actuales: ${usuario.creditos}`);
     
-    if (resultado) {
-      await socket.sendMessage(sender, { 
-        text: `✅ Se han agregado ${cantidad} créditos a ${numeroTelefono}. Nuevo balance: ${usuario.creditos + cantidad} créditos.` 
+    // Agregar créditos directamente sin usar creditoController
+    try {
+      // Actualizar directamente en la base de datos
+      await Usuario.update(
+        { creditos: sequelize.literal(`creditos + ${cantidad}`) },
+        { where: { numero_telefono: numeroLimpio } }
+      );
+      
+      // Registrar la transacción
+      await TransaccionCredito.create({
+        id_usuario: usuario.id,
+        cantidad,
+        tipo: 'regalo',
+        descripcion: 'Créditos agregados por administrador'
       });
-    } else {
-      await socket.sendMessage(sender, { 
-        text: '❌ Error al agregar créditos. Intenta nuevamente.' 
+      
+      // Obtener el usuario actualizado para mostrar el balance exacto
+      const usuarioActualizado = await Usuario.findOne({
+        where: { numero_telefono: numeroLimpio }
       });
+      
+      logger.info(`[ADMIN] Créditos agregados correctamente. Balance anterior: ${usuario.creditos}, Balance nuevo: ${usuarioActualizado.creditos}`);
+      
+      await socket.sendMessage(sender, { 
+        text: `✅ Se han agregado ${cantidad} créditos a ${numeroLimpio}. Nuevo balance: ${usuarioActualizado.creditos} créditos.` 
+      });
+      
+      return;
+    } catch (error) {
+      logger.error(`[ADMIN] Error al actualizar créditos directamente: ${error.message}`);
+      
+      // Intentar con el método del controlador como respaldo
+      logger.info(`[ADMIN] Intentando agregar créditos usando creditoController...`);
+      const resultado = await creditoController.agregarCredito(
+        numeroLimpio,
+        cantidad,
+        'regalo',
+        'Créditos agregados por administrador'
+      );
+      
+      if (resultado) {
+        // Obtener el usuario actualizado para mostrar el balance exacto
+        const usuarioActualizado = await Usuario.findOne({
+          where: { numero_telefono: numeroLimpio }
+        });
+        
+        logger.info(`[ADMIN] Créditos agregados con creditoController. Nuevo balance: ${usuarioActualizado.creditos}`);
+        
+        await socket.sendMessage(sender, { 
+          text: `✅ Se han agregado ${cantidad} créditos a ${numeroLimpio}. Nuevo balance: ${usuarioActualizado.creditos} créditos.` 
+        });
+      } else {
+        logger.error(`[ADMIN] creditoController.agregarCredito devolvió false`);
+        await socket.sendMessage(sender, { 
+          text: '❌ Error al agregar créditos. Intenta nuevamente.' 
+        });
+      }
     }
   } catch (error) {
-    logger.error(`Error al agregar créditos: ${error.message}`);
+    logger.error(`[ADMIN] Error general en agregarCreditosUsuario: ${error.message}`);
     await socket.sendMessage(sender, { 
-      text: '❌ Error al procesar la solicitud.' 
+      text: `❌ Error al procesar el comando: ${error.message}` 
     });
   }
 };

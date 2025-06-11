@@ -87,12 +87,16 @@ const buscarCanciones = async (searchTerm) => {
       }
     }
     
-    // Si la búsqueda especial no encuentra resultados o no es un artista especial, intentar con el procedimiento almacenado
+    // Si la búsqueda especial no encuentra resultados o no es un artista especial, intentar con el procedimiento almacenado optimizado con caché
     try {
       const result = await sequelize.query(
-        'CALL buscar_canciones(:termino)',
+        'CALL buscar_canciones_cache(:termino, :limite, :usarCache)',
         {
-          replacements: { termino },
+          replacements: { 
+            termino, 
+            limite: 30, 
+            usarCache: true 
+          },
           type: sequelize.QueryTypes.RAW
         }
       );

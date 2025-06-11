@@ -28,6 +28,11 @@ const Descarga = sequelize.define('Descarga', {
   fecha_descarga: {
     type: DataTypes.DATE,
     defaultValue: DataTypes.NOW
+  },
+  origen: {
+    type: DataTypes.STRING(50),
+    allowNull: true,
+    defaultValue: 'local'
   }
 }, {
   tableName: 'descargas',

@@ -21,7 +21,7 @@ const TransaccionCredito = sequelize.define('TransaccionCredito', {
     allowNull: false
   },
   tipo: {
-    type: DataTypes.ENUM('compra', 'uso', 'regalo', 'promocion'),
+    type: DataTypes.ENUM('compra', 'uso', 'regalo', 'promocion', 'inicial'),
     allowNull: false
   },
   descripcion: {

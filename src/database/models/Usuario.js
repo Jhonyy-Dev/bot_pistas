@@ -17,7 +17,15 @@ const Usuario = sequelize.define('Usuario', {
   },
   creditos: {
     type: DataTypes.INTEGER,
-    defaultValue: 0
+    defaultValue: 10
+  },
+  es_admin: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false
+  },
+  es_primera_vez: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: true
   },
   fecha_registro: {
     type: DataTypes.DATE,

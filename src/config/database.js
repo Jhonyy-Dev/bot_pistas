@@ -19,6 +19,27 @@ const sequelize = new Sequelize(
       min: 0,
       acquire: 30000,
       idle: 10000
+    },
+    dialectOptions: {
+      connectTimeout: parseInt(process.env.DB_CONNECTION_TIMEOUT) || 60000,
+      ssl: process.env.DB_SSL === 'true' ? {
+        rejectUnauthorized: false
+      } : false
+    },
+    retry: {
+      max: 3,
+      match: [
+        /ETIMEDOUT/,
+        /EHOSTUNREACH/,
+        /ECONNRESET/,
+        /ECONNREFUSED/,
+        /SequelizeConnectionError/,
+        /SequelizeConnectionRefusedError/,
+        /SequelizeHostNotFoundError/,
+        /SequelizeHostNotReachableError/,
+        /SequelizeInvalidConnectionError/,
+        /SequelizeConnectionTimedOutError/
+      ]
     }
   }
 );

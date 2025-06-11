@@ -14,49 +14,31 @@ const agregarCredito = async (numeroTelefono, cantidad, tipo, descripcion) => {
   const transaction = await sequelize.transaction();
   
   try {
-    // Intentar usar el procedimiento almacenado
-    try {
-      const [results] = await sequelize.query(
-        'CALL agregar_creditos(:numero_telefono, :cantidad, :tipo, :descripcion, @p_exito)',
-        {
-          replacements: {
-            numero_telefono: numeroTelefono,
-            cantidad,
-            tipo,
-            descripcion
-          },
-          transaction
-        }
-      );
-      
-      const exito = results && results[0] && results[0].p_exito;
-      
-      if (exito) {
-        await transaction.commit();
-        logger.info(`Créditos agregados a ${numeroTelefono}: ${cantidad} (${tipo})`);
-        return true;
-      }
-    } catch (error) {
-      // Si falla el procedimiento almacenado, continuar con el método alternativo
-      logger.warn(`Error en procedimiento agregar_creditos: ${error.message}. Usando método alternativo.`);
-    }
+    logger.info(`Intentando agregar ${cantidad} créditos a ${numeroTelefono} (${tipo}: ${descripcion})`);
     
-    // Método alternativo usando Sequelize
+    // Método directo usando Sequelize (sin procedimiento almacenado)
     const usuario = await Usuario.findOne({
       where: { numero_telefono: numeroTelefono },
       transaction
     });
     
     if (!usuario) {
+      logger.error(`Usuario no encontrado: ${numeroTelefono}`);
       await transaction.rollback();
       return false;
     }
     
-    // Actualizar créditos del usuario
-    await usuario.increment('creditos', {
-      by: cantidad,
-      transaction
-    });
+    // Obtener créditos actuales para log
+    const creditosAntes = usuario.creditos;
+    
+    // Actualizar créditos del usuario con un valor exacto
+    await Usuario.update(
+      { creditos: sequelize.literal(`creditos + ${cantidad}`) },
+      { 
+        where: { numero_telefono: numeroTelefono },
+        transaction 
+      }
+    );
     
     // Registrar la transacción
     await TransaccionCredito.create({
@@ -66,12 +48,21 @@ const agregarCredito = async (numeroTelefono, cantidad, tipo, descripcion) => {
       descripcion
     }, { transaction });
     
+    // Verificar que los créditos se actualizaron correctamente
+    const usuarioActualizado = await Usuario.findOne({
+      where: { numero_telefono: numeroTelefono },
+      transaction
+    });
+    
+    const creditosDespues = usuarioActualizado.creditos;
+    
+    logger.info(`Créditos actualizados para ${numeroTelefono}: ${creditosAntes} -> ${creditosDespues} (agregados: ${cantidad})`);
+    
     await transaction.commit();
-    logger.info(`Créditos agregados a ${numeroTelefono}: ${cantidad} (${tipo})`);
     return true;
   } catch (error) {
-    await transaction.rollback();
     logger.error(`Error al agregar créditos a ${numeroTelefono}: ${error.message}`);
+    await transaction.rollback();
     return false;
   }
 };
@@ -86,37 +77,54 @@ const descontarCredito = async (numeroTelefono, idCancion) => {
   const transaction = await sequelize.transaction();
   
   try {
-    // Intentar usar el procedimiento almacenado
-    try {
-      const [results] = await sequelize.query(
-        'CALL registrar_descarga(:numero_telefono, :id_cancion, @p_exito)',
-        {
-          replacements: {
-            numero_telefono: numeroTelefono,
-            id_cancion: idCancion
-          },
-          transaction
-        }
-      );
-      
-      const exito = results && results[0] && results[0].p_exito;
-      
-      if (exito) {
-        await transaction.commit();
-        logger.info(`Crédito descontado de ${numeroTelefono} por descarga de canción ID: ${idCancion}`);
-        return true;
-      }
-    } catch (error) {
-      // Si falla el procedimiento almacenado, continuar con el método alternativo
-      logger.warn(`Error en procedimiento registrar_descarga: ${error.message}. Usando método alternativo.`);
-    }
-    
-    // Método alternativo usando Sequelize
+    // Primero obtenemos el ID del usuario
     const usuario = await Usuario.findOne({
       where: { numero_telefono: numeroTelefono },
       transaction
     });
     
+    if (!usuario) {
+      logger.error(`Usuario no encontrado: ${numeroTelefono}`);
+      await transaction.rollback();
+      return false;
+    }
+    
+    // Intentar usar el procedimiento almacenado optimizado
+    try {
+      // El procedimiento almacenado optimizado requiere id_usuario, id_cancion y origen
+      const [results] = await sequelize.query(
+        'CALL registrar_descarga(?, ?, ?)',
+        {
+          replacements: [
+            usuario.id,         // ID del usuario (no el número de teléfono)
+            idCancion,          // ID de la canción
+            'app'               // Origen de la descarga
+          ],
+          type: sequelize.QueryTypes.RAW,
+          transaction
+        }
+      );
+      
+      // El procedimiento devuelve un resultado si fue exitoso
+      if (results && results.length > 0) {
+        await transaction.commit();
+        logger.info(`Crédito descontado de ${numeroTelefono} por descarga de canción ID: ${idCancion}`);
+        return true;
+      }
+    } catch (error) {
+      // Si el error es por créditos insuficientes, manejarlo específicamente
+      if (error.message && error.message.includes('Créditos insuficientes')) {
+        logger.warn(`Créditos insuficientes para usuario ${numeroTelefono}`);
+        await transaction.rollback();
+        return false;
+      }
+      
+      // Si falla el procedimiento almacenado por otra razón, continuar con el método alternativo
+      logger.warn(`Error en procedimiento registrar_descarga: ${error.message}. Usando método alternativo.`);
+    }
+    
+    // Método alternativo usando Sequelize
+    // Verificar si el usuario tiene suficientes créditos
     if (!usuario || usuario.creditos < 1) {
       await transaction.rollback();
       return false;

@@ -1,0 +1,321 @@
+/**
+ * Controlador para manejar las interacciones con Backblaze B2
+ * Este controlador integra el servicio de Backblaze B2 con el bot de WhatsApp
+ */
+
+const logger = require('../config/logger');
+const backblazeService = require('../services/backblazeService');
+const musicService = require('../services/musicService');
+const fs = require('fs-extra'); // Cambiado a fs-extra para usar ensureDir
+const path = require('path');
+
+/**
+ * Busca canciones en Backblaze B2 y en la base de datos
+ * @param {string} searchTerm - Término de búsqueda
+ * @param {number} limit - Límite de resultados
+ * @returns {Promise<Array>} - Lista de canciones encontradas
+ */
+async function buscarCanciones(searchTerm, limit = 5) {
+  try {
+    // Validar parámetros de entrada
+    if (!searchTerm || typeof searchTerm !== 'string') {
+      logger.error(`Término de búsqueda inválido: ${searchTerm}`);
+      return [];
+    }
+    
+    logger.info(`Buscando canciones con término: "${searchTerm}"`);
+    
+    // Buscar en la base de datos primero
+    try {
+      const canciones = await musicService.buscarCanciones(searchTerm, limit);
+      
+      if (canciones && canciones.length > 0) {
+        logger.info(`Se encontraron ${canciones.length} canciones en la base de datos`);
+        return canciones;
+      }
+    } catch (dbError) {
+      logger.error(`Error al buscar en base de datos: ${dbError.message}`);
+      // Continuar con la búsqueda en Backblaze B2
+    }
+    
+    // Si no hay resultados en la base de datos, buscar directamente en Backblaze B2
+    logger.info('No se encontraron canciones en la base de datos, buscando en Backblaze B2...');
+    
+    // Obtener lista de archivos de Backblaze B2
+    let archivos = [];
+    try {
+      archivos = await backblazeService.listarArchivos();
+      logger.info(`Se obtuvieron ${archivos.length} archivos de Backblaze B2`);
+      
+      // Verificar que archivos sea un array válido
+      if (!Array.isArray(archivos)) {
+        logger.error(`La respuesta de listarArchivos no es un array: ${typeof archivos}`);
+        archivos = [];
+      }
+    } catch (b2Error) {
+      logger.error(`Error al listar archivos de Backblaze B2: ${b2Error.message}`);
+      return [];
+    }
+    
+    // Si no hay archivos, retornar array vacío
+    if (archivos.length === 0) {
+      logger.info('No se encontraron archivos en Backblaze B2');
+      return [];
+    }
+    
+    // Filtrar archivos por el término de búsqueda (solo MP3)
+    // Normalizar el término de búsqueda para eliminar caracteres especiales
+    const normalizedSearchTerm = searchTerm.toLowerCase()
+      .replace(/^[-\s]+/, '')  // Eliminar guiones y espacios al inicio
+      .replace(/\s+/g, ' ')    // Normalizar espacios múltiples
+      .trim();
+    
+    logger.info(`Término de búsqueda normalizado: "${normalizedSearchTerm}"`);
+    
+    // Buscar coincidencias con mayor flexibilidad
+    const resultados = [];
+    
+    for (const archivo of archivos) {
+      try {
+        // Verificar que el archivo tenga la propiedad Key
+        if (!archivo || !archivo.Key) {
+          logger.warn(`Archivo sin propiedad Key: ${JSON.stringify(archivo)}`);
+          continue;
+        }
+        
+        // Solo archivos MP3
+        if (!archivo.Key.toLowerCase().endsWith('.mp3')) continue;
+        
+        // Normalizar el nombre del archivo para la comparación
+        const normalizedFileName = archivo.Key.toLowerCase()
+          .replace(/^[-\s]+/, '')  // Eliminar guiones y espacios al inicio
+          .replace(/\s+/g, ' ')    // Normalizar espacios múltiples
+          .trim();
+        
+        logger.debug(`Comparando: "${normalizedFileName}" con "${normalizedSearchTerm}"`);
+        
+        // Verificar si el nombre normalizado contiene el término de búsqueda normalizado
+        if (normalizedFileName.includes(normalizedSearchTerm)) {
+          resultados.push({
+            id: null, // No existe en la base de datos
+            nombre: archivo.Key.replace('.mp3', ''),
+            artista: 'Desconocido', // No tenemos esta información
+            archivo_nombre: archivo.Key,
+            archivo_path: archivo.Key,
+            tamanio_mb: archivo.Size ? (archivo.Size / (1024 * 1024)).toFixed(2) : '0',
+            veces_reproducida: 0,
+            es_backblaze: true // Marcar como archivo de Backblaze
+          });
+          
+          // Si alcanzamos el límite, detenemos la búsqueda
+          if (resultados.length >= limit) break;
+        }
+      } catch (fileError) {
+        logger.error(`Error procesando archivo: ${fileError.message}`);
+        // Continuar con el siguiente archivo
+      }
+    }
+    
+    logger.info(`Se encontraron ${resultados.length} canciones en Backblaze B2`);
+    return resultados;
+  } catch (error) {
+    logger.error(`Error al buscar canciones: ${error.message}`);
+    throw error;
+  }
+}
+
+/**
+ * Obtiene una canción por su nombre de archivo
+ * @param {string} fileName - Nombre del archivo
+ * @returns {Promise<Object>} - Información de la canción
+ */
+async function obtenerCancionPorArchivo(fileName) {
+  try {
+    logger.info(`Buscando canción con nombre de archivo: "${fileName}"`);
+    
+    // Verificar si existe en la base de datos usando una consulta directa
+    // ya que el servicio musicService no tiene la función obtenerCancionPorArchivo
+    const { sequelize } = require('../config/database');
+    const { Sequelize } = require('sequelize');
+    
+    const [cancion] = await sequelize.query(
+      'SELECT * FROM canciones WHERE ruta_archivo = ? LIMIT 1',
+      {
+        replacements: [fileName],
+        type: Sequelize.QueryTypes.SELECT
+      }
+    );
+    
+    if (cancion) {
+      logger.info(`Canción encontrada en la base de datos: ${cancion.nombre}`);
+      return cancion;
+    }
+    
+    // Si no existe en la base de datos, verificar en Backblaze B2
+    logger.info('Canción no encontrada en la base de datos, verificando en Backblaze B2...');
+    const existe = await backblazeService.verificarArchivoExiste(fileName);
+    
+    if (!existe) {
+      logger.error(`Canción no encontrada en Backblaze B2: ${fileName}`);
+      throw new Error(`No se encontró la canción: ${fileName}`);
+    }
+    
+    // Obtener información del archivo
+    const info = await backblazeService.obtenerInfoArchivo(fileName);
+    
+    // Crear un objeto canción con la información disponible
+    return {
+      id: null, // No existe en la base de datos
+      nombre: fileName.replace('.mp3', ''),
+      artista: 'Desconocido', // No tenemos esta información
+      archivo_nombre: fileName,
+      archivo_path: fileName,
+      tamanio_mb: (info.tamanio / (1024 * 1024)).toFixed(2),
+      veces_reproducida: 0,
+      es_backblaze: true // Marcar como archivo de Backblaze
+    };
+  } catch (error) {
+    logger.error(`Error al obtener canción por archivo: ${error.message}`);
+    throw error;
+  }
+}
+
+/**
+ * Descarga una canción desde Backblaze B2
+ * @param {string} fileName - Nombre del archivo a descargar
+ * @returns {Promise<{buffer: Buffer, rutaArchivo: string}>} - Buffer del archivo y ruta temporal
+ */
+async function descargarCancion(fileName) {
+  try {
+    logger.info(`Descargando canción desde Backblaze B2: ${fileName}`);
+    
+    // Descargar el archivo desde Backblaze B2 con un timeout más corto
+    // Ahora descargarMp3 devuelve directamente un Buffer, no un objeto
+    const buffer = await Promise.race([
+      backblazeService.descargarMp3(fileName),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Timeout descargando archivo')), 15000)
+      )
+    ]);
+    
+    // Verificar que el buffer sea válido
+    if (!Buffer.isBuffer(buffer)) {
+      throw new Error('El servicio no devolvió un buffer válido');
+    }
+    
+    // Guardar el archivo temporalmente en paralelo con el envío
+    const tempDir = path.join(process.cwd(), 'mp3');
+    await fs.ensureDir(tempDir);
+    
+    const tempFileName = `${Date.now()}_${fileName}`;
+    const tempFilePath = path.join(tempDir, tempFileName);
+    
+    // No esperamos a que termine la escritura para devolver el buffer
+    fs.writeFile(tempFilePath, buffer)
+      .then(() => console.log(`Archivo descargado: ${tempFilePath}`))
+      .catch(err => logger.error(`Error guardando archivo temporal: ${err.message}`));
+    
+    return {
+      buffer,
+      rutaArchivo: tempFilePath
+    };
+  } catch (error) {
+    logger.error(`Error al descargar canción desde Backblaze B2: ${error.message}`);
+    throw error;
+  }
+}
+
+/**
+ * Registra la reproducción de una canción
+ * @param {Object} cancion - Información de la canción
+ * @param {string} usuarioWhatsapp - Número de WhatsApp del usuario
+ */
+async function registrarReproduccion(cancion, usuarioWhatsapp) {
+  try {
+    // Si la canción tiene ID (está en la base de datos), registrar reproducción
+    if (cancion.id) {
+      await musicService.registrarReproduccion(cancion.id, usuarioWhatsapp);
+      logger.info(`Reproducción registrada para canción ID ${cancion.id} por usuario ${usuarioWhatsapp}`);
+    } else {
+      // Si la canción no está en la base de datos, intentar agregarla
+      logger.info(`Intentando agregar canción a la base de datos: ${cancion.nombre}`);
+      
+      try {
+        // Calcular hash de contenido si es posible
+        let hashContenido = null;
+        if (cancion.buffer) {
+          const crypto = require('crypto');
+          hashContenido = crypto
+            .createHash('sha256')
+            .update(cancion.buffer)
+            .digest('hex');
+        }
+        
+        // Convertir tamaño a bytes si viene en MB
+        const tamanioBytes = cancion.tamanio_bytes || 
+                           (cancion.tamanio_mb ? Math.round(parseFloat(cancion.tamanio_mb) * 1024 * 1024) : 0);
+        
+        const cancionId = await musicService.agregarCancion({
+          titulo: cancion.nombre,
+          artista: cancion.artista || 'Desconocido',
+          album: cancion.album || 'Desconocido',
+          genero: cancion.genero || 'Desconocido',
+          duracion: cancion.duracion || '00:00',
+          archivo_path: cancion.archivo_path || cancion.ruta_archivo,
+          tamanio_bytes: tamanioBytes,
+          hash_contenido: hashContenido
+        });
+        
+        // Si se agregó correctamente, registrar reproducción
+        if (cancionId) {
+          await musicService.registrarReproduccion(cancionId, usuarioWhatsapp);
+          logger.info(`Canción agregada a la base de datos con ID ${cancionId} y reproducción registrada`);
+        }
+      } catch (error) {
+        logger.error(`Error al agregar canción a la base de datos: ${error.message}`);
+        // No interrumpir el flujo si hay error al agregar la canción
+      }
+    }
+  } catch (error) {
+    logger.error(`Error al registrar reproducción: ${error.message}`);
+    // No interrumpir el flujo si hay error al registrar la reproducción
+  }
+}
+
+/**
+ * Limpia los archivos temporales
+ */
+async function limpiarArchivosTemporales() {
+  try {
+    // Obtener lista de archivos temporales en la carpeta temp
+    const tempDir = path.join(process.cwd(), 'temp');
+    
+    // Crear la carpeta temp si no existe
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+      logger.info('Carpeta temporal creada');
+      return;
+    }
+    
+    // Leer archivos en la carpeta temp
+    const files = fs.readdirSync(tempDir);
+    
+    // Limpiar cada archivo
+    for (const file of files) {
+      const filePath = path.join(tempDir, file);
+      await musicService.limpiarArchivoTemporal(filePath);
+    }
+    
+    logger.info(`${files.length} archivos temporales limpiados`);
+  } catch (error) {
+    logger.error(`Error al limpiar archivos temporales: ${error.message}`);
+  }
+}
+
+module.exports = {
+  buscarCanciones,
+  obtenerCancionPorArchivo,
+  descargarCancion,
+  registrarReproduccion,
+  limpiarArchivosTemporales
+};
