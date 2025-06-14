@@ -15,7 +15,7 @@ const path = require('path');
  * @param {number} limit - Límite de resultados
  * @returns {Promise<Array>} - Lista de canciones encontradas
  */
-async function buscarCanciones(searchTerm, limit = 320) {
+async function buscarCanciones(searchTerm, limit = 500) {
   try {
     // Validar parámetros de entrada
     if (!searchTerm || typeof searchTerm !== 'string') {
@@ -46,8 +46,8 @@ async function buscarCanciones(searchTerm, limit = 320) {
     
     if (faltantes > 0) {
       try {
-        // Obtener archivos de Backblaze B2 (con un límite razonable pero generoso)
-        const limiteFetch = Math.min(5000, limit * 10);
+        // Obtener archivos de Backblaze B2 (con un límite mucho más amplio)
+        const limiteFetch = Math.min(10000, limit * 20);
         logger.info(`Obteniendo hasta ${limiteFetch} archivos de Backblaze B2`);
         
         const archivos = await backblazeService.listarArchivos('', limiteFetch);
@@ -71,12 +71,16 @@ async function buscarCanciones(searchTerm, limit = 320) {
         }
         
         // Filtrar archivos por el término de búsqueda (solo MP3)
-        // Normalizar el término de búsqueda para eliminar caracteres especiales
+        // Normalizar el término de búsqueda con múltiples variantes para maximizar coincidencias
         const normalizedSearchTerms = [
           searchTerm.toLowerCase().trim(),
           searchTerm.toLowerCase().replace(/^[-\s]+/, '').replace(/\s+/g, ' ').trim(),
           searchTerm.toLowerCase().replace(/[-_]/g, ' ').trim(),
-          searchTerm.toLowerCase().replace(/\s+/g, '').trim() // Sin espacios
+          searchTerm.toLowerCase().replace(/\s+/g, '').trim(), // Sin espacios
+          searchTerm.toLowerCase().replace(/[^a-z0-9]/g, ''), // Solo alfanuméricos
+          searchTerm.toLowerCase().split(' ')[0], // Primera palabra
+          searchTerm.toLowerCase().substring(0, Math.max(4, Math.floor(searchTerm.length/2))), // Prefijo
+          ...searchTerm.toLowerCase().split(' ').filter(word => word.length > 3) // Palabras individuales importantes
         ];
         
         logger.info(`Términos de búsqueda normalizados: ${JSON.stringify(normalizedSearchTerms)}`);
@@ -105,25 +109,71 @@ async function buscarCanciones(searchTerm, limit = 320) {
             // Evitar duplicados
             if (nombresExistentes.has(nombreArchivo)) continue;
             
-            // Normalizar el nombre del archivo para la comparación
+            // Normalizar el nombre del archivo para la comparación de manera más exhaustiva
+            let nombreSinExtension = nombreArchivo.replace(/\.mp3$/i, '');
+            
             const normalizedFileNames = [
               nombreArchivo.toLowerCase(),
-              nombreArchivo.toLowerCase().replace(/^[-\s]+/, '').replace(/\s+/g, ' ').trim(),
-              nombreArchivo.toLowerCase().replace(/[-_]/g, ' ').trim(),
-              nombreArchivo.toLowerCase().replace(/\s+/g, '').trim() // Sin espacios
+              nombreSinExtension.toLowerCase(),
+              nombreSinExtension.toLowerCase().replace(/^[-\s]+/, '').replace(/\s+/g, ' ').trim(),
+              nombreSinExtension.toLowerCase().replace(/[-_]/g, ' ').trim(),
+              nombreSinExtension.toLowerCase().replace(/\s+/g, '').trim(), // Sin espacios
+              nombreSinExtension.toLowerCase().replace(/[^a-z0-9]/g, ''), // Solo alfanuméricos
+              ...nombreSinExtension.toLowerCase().split(/[-_\s]+/).filter(part => part.length > 2) // Partes individuales
             ];
             
-            // Verificar coincidencias más flexibles
+            // Sistema de puntuación para determinar relevancia
+            let puntuacionMaxima = 0;
             let coincidencia = false;
+            
             for (const searchTerm of normalizedSearchTerms) {
+              if (!searchTerm || searchTerm.length < 2) continue;
+              
               for (const fileName of normalizedFileNames) {
-                if (fileName.includes(searchTerm) || searchTerm.includes(fileName.split('.')[0])) {
+                if (!fileName || fileName.length < 2) continue;
+                
+                // Coincidencia exacta o contención
+                if (fileName === searchTerm) {
                   coincidencia = true;
                   break;
                 }
+                
+                if (fileName.includes(searchTerm)) {
+                  puntuacionMaxima = Math.max(puntuacionMaxima, 5);
+                  if (puntuacionMaxima >= 5) coincidencia = true;
+                }
+                
+                if (searchTerm.includes(fileName)) {
+                  puntuacionMaxima = Math.max(puntuacionMaxima, 4);
+                  if (puntuacionMaxima >= 5) coincidencia = true;
+                }
+                
+                // Palabras individuales - coincidencia parcial
+                const fileParts = fileName.split(/\s+/);
+                const searchParts = searchTerm.split(/\s+/);
+                
+                for (const searchPart of searchParts) {
+                  if (searchPart.length < 3) continue;
+                  
+                  if (fileName.includes(searchPart)) {
+                    puntuacionMaxima = Math.max(puntuacionMaxima, 3);
+                  }
+                  
+                  for (const filePart of fileParts) {
+                    if (filePart.length < 3) continue;
+                    
+                    if (filePart.includes(searchPart) || searchPart.includes(filePart)) {
+                      puntuacionMaxima = Math.max(puntuacionMaxima, 2);
+                    }
+                  }
+                }
               }
+              
               if (coincidencia) break;
             }
+            
+            // Considerar coincidencia si la puntuación es suficiente
+            coincidencia = coincidencia || puntuacionMaxima >= 2;
             
             if (coincidencia) {
               resultadosB2.push({

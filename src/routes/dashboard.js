@@ -95,7 +95,16 @@ router.get('/api/dashboard-data', async (req, res) => {
     };
     
     try {
-      stats = await obtenerEstadisticasCompletas();
+      const estadisticasCompletas = await obtenerEstadisticasCompletas();
+      
+      // Extraer solo los datos básicos de resumen para el dashboard principal
+      stats = {
+        usuariosRegistrados: estadisticasCompletas.resumen.totalUsuarios || 0,
+        cancionesDisponibles: estadisticasCompletas.resumen.totalCanciones || 0,
+        descargasTotales: estadisticasCompletas.resumen.totalDescargas || 0
+      };
+      
+      logger.info(`Estadísticas obtenidas: Usuarios=${stats.usuariosRegistrados}, Canciones=${stats.cancionesDisponibles}, Descargas=${stats.descargasTotales}`);
     } catch (statsError) {
       logger.error(`Error al obtener estadísticas: ${statsError.message}`);
       // Continuamos con las estadísticas por defecto
@@ -352,7 +361,7 @@ async function obtenerEstadisticasCompletas() {
       descargasSemana,
       descargasMes,
       
-      // Canciones más populares por veces reproducida
+      // Canciones más populares por popularidad
       cancionesPopulares,
       
       // Distribución de géneros (si existe esa columna)
@@ -421,12 +430,12 @@ async function obtenerEstadisticasCompletas() {
         WHERE fecha_descarga >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
       `, { type: sequelize.QueryTypes.SELECT }),
       
-      // Canciones más populares por veces reproducida
+      // Canciones más populares por popularidad
       sequelize.query(`
-        SELECT c.nombre, c.artista, c.veces_reproducida as total_reproducciones
+        SELECT c.nombre, c.artista, c.popularidad
         FROM canciones c
-        WHERE c.veces_reproducida > 0
-        ORDER BY c.veces_reproducida DESC
+        WHERE c.popularidad > 0
+        ORDER BY c.popularidad DESC
         LIMIT 10
       `, { type: sequelize.QueryTypes.SELECT }),
       

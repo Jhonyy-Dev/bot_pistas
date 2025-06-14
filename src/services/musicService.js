@@ -17,7 +17,7 @@ const logger = require('../config/logger');
  * @param {boolean} [usarCache=true] - Si se debe usar la caché de búsquedas
  * @returns {Promise<Array>} - Lista de canciones encontradas
  */
-async function buscarCanciones(termino, limite = 5, usarCache = true) {
+async function buscarCanciones(termino, limite = 100, usarCache = true) {
   try {
     // Intentar usar el procedimiento almacenado optimizado con caché
     try {
