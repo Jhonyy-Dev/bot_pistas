@@ -15,7 +15,7 @@ const path = require('path');
  * @param {number} limit - Límite de resultados
  * @returns {Promise<Array>} - Lista de canciones encontradas
  */
-async function buscarCanciones(searchTerm, limit = 5) {
+async function buscarCanciones(searchTerm, limit = 320) {
   try {
     // Validar parámetros de entrada
     if (!searchTerm || typeof searchTerm !== 'string') {

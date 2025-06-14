@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><%= title %></title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .qr-container {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 15px;
+            padding: 20px;
+            text-align: center;
+            color: white;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+        }
+        .status-card {
+            background: white;
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            border-left: 4px solid #28a745;
+        }
+        .status-disconnected {
+            border-left-color: #dc3545;
+        }
+        .status-connected {
+            border-left-color: #28a745;
+        }
+        .stat-card {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            border-radius: 15px;
+            padding: 20px;
+            text-align: center;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        }
+        .stat-card.users {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        }
+        .stat-card.songs {
+            background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+        }
+        .stat-card.downloads {
+            background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+        }
+        .qr-code {
+            max-width: 300px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+        }
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+        .navbar-brand {
+            font-weight: bold;
+            font-size: 1.5rem;
+        }
+        .log-container {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 15px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body class="bg-light">
+    <!-- Navbar -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container">
+            <a class="navbar-brand" href="/">
+                <i class="fas fa-music me-2"></i>BOT_PISTAS Dashboard
+            </a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="/dashboard/stats">
+                    <i class="fas fa-chart-bar me-1"></i>Estadísticas
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <!-- Header -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <h1 class="display-6 text-center">
+                    <i class="fas fa-robot me-2"></i>Panel de Control BOT_PISTAS
+                </h1>
+                <p class="text-center text-muted">Monitoreo en tiempo real • Última actualización: <span id="lastUpdate"><%= timestamp %></span></p>
+            </div>
+        </div>
+
+        <!-- Estado de Conexión y QR -->
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <div class="status-card <%= botStatus.isConnected ? 'status-connected' : 'status-disconnected' %>" id="statusCard">
+                    <h4>
+                        <i class="fas fa-circle me-2" id="statusIcon"></i>
+                        Estado de WhatsApp
+                    </h4>
+                    <p class="mb-0" id="statusText">
+                        <%= botStatus.isConnected ? 'Conectado' : 'Desconectado' %>
+                    </p>
+                    <% if (botStatus.lastConnection) { %>
+                        <small class="text-muted">Última conexión: <%= botStatus.lastConnection %></small>
+                    <% } %>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="qr-container" id="qrContainer">
+                    <h4><i class="fas fa-qrcode me-2"></i>Código QR</h4>
+                    <div id="qrCodeDisplay">
+                        <% if (botStatus.qrCode) { %>
+                            <div class="qr-code">
+                                <img src="<%= botStatus.qrCode %>" alt="QR Code" class="img-fluid">
+                            </div>
+                        <% } else if (botStatus.isConnected) { %>
+                            <div class="alert alert-success">
+                                <i class="fas fa-check-circle me-2"></i>
+                                ¡WhatsApp conectado exitosamente!
+                            </div>
+                        <% } else { %>
+                            <div class="alert alert-warning">
+                                <i class="fas fa-clock me-2"></i>
+                                Esperando código QR...
+                            </div>
+                        <% } %>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Estadísticas -->
+        <div class="row mb-4">
+            <div class="col-md-4">
+                <div class="stat-card users">
+                    <h3><%= botStatus.totalUsers %></h3>
+                    <p><i class="fas fa-users me-2"></i>Usuarios Registrados</p>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="stat-card songs">
+                    <h3><%= botStatus.totalSongs %></h3>
+                    <p><i class="fas fa-music me-2"></i>Canciones Disponibles</p>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="stat-card downloads">
+                    <h3><%= botStatus.totalDownloads %></h3>
+                    <p><i class="fas fa-download me-2"></i>Descargas Totales</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Logs en Tiempo Real -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="fas fa-terminal me-2"></i>Logs del Sistema</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="log-container" id="logContainer">
+                            <div class="text-muted">Cargando logs...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Actualización automática cada 5 segundos
+        setInterval(updateStatus, 5000);
+        
+        // Actualización inicial
+        updateStatus();
+        updateLogs();
+
+        async function updateStatus() {
+            try {
+                const response = await fetch('/dashboard/api/status');
+                const status = await response.json();
+                
+                // Actualizar estado de conexión
+                const statusCard = document.getElementById('statusCard');
+                const statusIcon = document.getElementById('statusIcon');
+                const statusText = document.getElementById('statusText');
+                
+                if (status.isConnected) {
+                    statusCard.className = 'status-card status-connected';
+                    statusIcon.className = 'fas fa-circle me-2 text-success';
+                    statusText.textContent = 'Conectado';
+                } else {
+                    statusCard.className = 'status-card status-disconnected';
+                    statusIcon.className = 'fas fa-circle me-2 text-danger';
+                    statusText.textContent = 'Desconectado';
+                }
+                
+                // Actualizar estadísticas
+                document.querySelector('.stat-card.users h3').textContent = status.totalUsers;
+                document.querySelector('.stat-card.songs h3').textContent = status.totalSongs;
+                document.querySelector('.stat-card.downloads h3').textContent = status.totalDownloads;
+                
+                // Actualizar timestamp
+                document.getElementById('lastUpdate').textContent = new Date(status.timestamp).toLocaleString();
+                
+            } catch (error) {
+                console.error('Error actualizando estado:', error);
+            }
+        }
+
+        async function updateQR() {
+            try {
+                const response = await fetch('/dashboard/api/qr');
+                const data = await response.json();
+                
+                const qrDisplay = document.getElementById('qrCodeDisplay');
+                
+                if (data.qrCode && !data.isConnected) {
+                    qrDisplay.innerHTML = `
+                        <div class="qr-code pulse">
+                            <img src="${data.qrCode}" alt="QR Code" class="img-fluid">
+                        </div>
+                        <p class="mt-2">Escanea con WhatsApp</p>
+                    `;
+                } else if (data.isConnected) {
+                    qrDisplay.innerHTML = `
+                        <div class="alert alert-success">
+                            <i class="fas fa-check-circle me-2"></i>
+                            ¡WhatsApp conectado exitosamente!
+                        </div>
+                    `;
+                } else {
+                    qrDisplay.innerHTML = `
+                        <div class="alert alert-warning">
+                            <i class="fas fa-clock me-2"></i>
+                            Esperando código QR...
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Error actualizando QR:', error);
+            }
+        }
+
+        async function updateLogs() {
+            try {
+                const response = await fetch('/dashboard/api/logs');
+                const logs = await response.json();
+                
+                const logContainer = document.getElementById('logContainer');
+                logContainer.innerHTML = logs.map(log => `
+                    <div class="mb-1">
+                        <span class="badge bg-${log.level === 'error' ? 'danger' : 'primary'}">${log.level}</span>
+                        <small class="text-muted">${new Date(log.timestamp).toLocaleTimeString()}</small>
+                        ${log.message}
+                    </div>
+                `).join('');
+                
+            } catch (error) {
+                console.error('Error actualizando logs:', error);
+            }
+        }
+
+        // Actualizar QR cada 3 segundos
+        setInterval(updateQR, 3000);
+        updateQR();
+        
+        // Actualizar logs cada 10 segundos
+        setInterval(updateLogs, 10000);
+    </script>
+</body>
+</html>

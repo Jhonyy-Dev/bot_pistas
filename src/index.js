@@ -11,24 +11,30 @@ const { iniciarServicioMantenimiento } = require('./services/maintenanceService'
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Configurar motor de plantillas EJS
+app.set('view engine', 'ejs');
+app.set('views', path.join(__dirname, 'views'));
+
 // Middlewares
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(express.static(path.join(__dirname, 'public')));
 
-// Ruta principal
+// Importar rutas del dashboard
+const { router: dashboardRouter } = require('./routes/dashboard');
+app.use('/dashboard', dashboardRouter);
+
+// Ruta principal - redirigir al dashboard
 app.get('/', (req, res) => {
-  res.json({
-    status: 'online',
-    service: 'Bot Chiveros Perú',
-    version: '1.0.0'
-  });
+  res.redirect('/dashboard');
 });
 
-// Ruta para verificar estado del bot
-app.get('/status', (req, res) => {
+// Ruta para verificar estado del bot (API)
+app.get('/api/status', (req, res) => {
   res.json({
     whatsapp: whatsappService.isConnected ? 'conectado' : 'desconectado',
-    qrCode: whatsappService.qrCode ? 'disponible' : 'no disponible'
+    qrCode: whatsappService.qrCode ? 'disponible' : 'no disponible',
+    timestamp: new Date().toISOString()
   });
 });
 

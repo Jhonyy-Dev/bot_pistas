@@ -80,7 +80,7 @@ const callStoredProcedure = async (procedureName, params = []) => {
 };
 
 // Función para buscar canciones usando el procedimiento optimizado con caché
-const buscarCanciones = async (termino, limite = 10, usarCache = true) => {
+const buscarCanciones = async (termino, limite = 320, usarCache = true) => {
   try {
     return await callStoredProcedure('buscar_canciones_cache', [termino, limite, usarCache]);
   } catch (error) {

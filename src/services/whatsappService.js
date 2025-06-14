@@ -6,6 +6,16 @@ const logger = require('../config/logger');
 const { processMessage } = require('../controllers/messageController');
 const SessionCleaner = require('../utils/sessionCleaner');
 
+// Importar función para actualizar estado del dashboard
+let updateBotStatus;
+try {
+  const dashboardModule = require('../routes/dashboard');
+  updateBotStatus = dashboardModule.updateBotStatus;
+} catch (error) {
+  // Dashboard no disponible, usar función dummy
+  updateBotStatus = () => {};
+}
+
 // Asegurarse de que el directorio de sesiones existe
 const SESSION_DIR = path.resolve(process.env.SESSION_FOLDER || './sessions');
 fs.ensureDirSync(SESSION_DIR);
@@ -47,27 +57,55 @@ class WhatsAppService {
       
       // Crear el socket de WhatsApp
       this.socket = makeWASocket({
-        printQRInTerminal: true,
-        auth: state,
+        printQRInTerminal: false, // Deshabilitado para usar dashboard web
+        auth: this.authState.state,
+        browser: ['BOT_PISTAS', 'Chrome', '22.04.4'],
         defaultQueryTimeoutMs: 60000,
-        logger: logger
+        connectTimeoutMs: 60000,
+        keepAliveIntervalMs: 30000,
+        markOnlineOnConnect: true,
+        syncFullHistory: false,
+        shouldSyncHistoryMessage: () => false,
+        generateHighQualityLinkPreview: false,
+        patchMessageBeforeSending: (message) => {
+          const requiresPatch = !!(
+            message.buttonsMessage ||
+            message.templateMessage ||
+            message.listMessage
+          );
+          if (requiresPatch) {
+            message = {
+              viewOnceMessage: {
+                message: {
+                  messageContextInfo: {
+                    deviceListMetadataVersion: 2,
+                    deviceListMetadata: {},
+                  },
+                  ...message,
+                },
+              },
+            };
+          }
+          return message;
+        },
       });
-      
-      // Asignar manejadores de eventos
-      this.assignEventHandlers();
+
+      // Configurar eventos
+      this.setupEventHandlers();
       
       logger.info('Servicio de WhatsApp inicializado');
-      return true;
+      return this.socket;
+      
     } catch (error) {
-      logger.error('Error al inicializar servicio de WhatsApp:', error);
-      return false;
+      logger.error(`Error inicializando WhatsApp: ${error.message}`);
+      throw error;
     }
   }
   
   /**
-   * Asigna los manejadores de eventos al socket de WhatsApp
+   * Configura los eventos del socket de WhatsApp
    */
-  assignEventHandlers() {
+  setupEventHandlers() {
     // Evento de conexión/desconexión
     this.socket.ev.on('connection.update', this.handleConnectionUpdate.bind(this));
     
@@ -87,29 +125,57 @@ class WhatsAppService {
     // Mostrar código QR si está disponible
     if (qr) {
       this.qrCode = qr;
-      logger.info('Nuevo código QR generado. Por favor escanee con su WhatsApp:');
+      
+      // Generar QR como imagen base64 para el dashboard
+      const QRCode = require('qrcode');
+      try {
+        const qrDataURL = await QRCode.toDataURL(qr);
+        updateBotStatus({ 
+          qrCode: qrDataURL,
+          isConnected: false,
+          lastConnection: null
+        });
+        logger.info('Nuevo código QR generado para dashboard web');
+      } catch (error) {
+        logger.error(`Error generando QR para dashboard: ${error.message}`);
+      }
+      
+      // También mostrar en terminal para desarrollo local
       qrcode.generate(qr, { small: true });
     }
     
-    // Manejar estado de conexión
     if (connection === 'close') {
-      const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+      const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
       
-      logger.warn(`Conexión cerrada debido a: ${lastDisconnect.error}`);
+      logger.info(`Conexión cerrada debido a: ${lastDisconnect?.error}`);
       
-      if (shouldReconnect && this.reconnectAttempts < this.maxReconnectAttempts) {
-        this.reconnectAttempts++;
-        logger.info(`Intentando reconectar (${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
-        setTimeout(() => this.initialize(), 5000);
-      } else if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-        logger.error('Número máximo de intentos de reconexión alcanzados. Por favor reinicie la aplicación.');
+      if (shouldReconnect) {
+        if (this.reconnectAttempts < this.maxReconnectAttempts) {
+          this.reconnectAttempts++;
+          logger.info(`Reintentando conexión... Intento ${this.reconnectAttempts}/${this.maxReconnectAttempts}`);
+          setTimeout(() => this.initialize(), 5000);
+        } else {
+          logger.error('Máximo número de reintentos alcanzado. Deteniendo reconexión.');
+        }
       }
       
       this.isConnected = false;
+      updateBotStatus({ 
+        isConnected: false,
+        qrCode: null,
+        lastConnection: new Date().toLocaleString()
+      });
     } else if (connection === 'open') {
       logger.info('¡Conexión establecida con WhatsApp!');
       this.isConnected = true;
       this.reconnectAttempts = 0;
+      this.qrCode = null;
+      
+      updateBotStatus({ 
+        isConnected: true,
+        qrCode: null,
+        lastConnection: new Date().toLocaleString()
+      });
     }
   }
   

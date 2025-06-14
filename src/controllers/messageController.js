@@ -4,12 +4,14 @@ const { Op } = require('sequelize');
 const logger = require('../config/logger');
 const { Usuario, Cancion, Descarga, TransaccionCredito } = require('../database/models');
 const cancionController = require('./cancionController');
-creditoController = require('./creditoController');
+const creditoController = require('./creditoController');
 const adminController = require('./adminController');
-const localMp3Service = require('../services/localMp3Service');
 const backblazeController = require('./backblazeController');
 const backblazeService = require('../services/backblazeService');
 const userStateManager = require('../models/userState');
+
+// Configuración centralizada de créditos iniciales
+const CREDITOS_INICIALES = parseInt(process.env.CREDITOS_INICIALES) || 2;
 
 // Verificar si se debe usar la base de datos
 const usarDB = process.env.USAR_DB === 'true';
@@ -163,7 +165,7 @@ const getOrCreateUser = async (phoneNumber) => {
       if (!userStateManager.hasUser(cleanPhone)) {
         userStateManager.initUser(cleanPhone, {
           nombre: 'Usuario',
-          creditos: 10,
+          creditos: CREDITOS_INICIALES,
           es_admin: false,
           es_primera_vez: true,
           fecha_registro: new Date(),
@@ -201,7 +203,7 @@ const getOrCreateUser = async (phoneNumber) => {
       where: { numero_telefono: cleanPhone },
       defaults: {
         nombre: 'Usuario',
-        creditos: 10, // Créditos iniciales para nuevos usuarios
+        creditos: CREDITOS_INICIALES, // Créditos iniciales para nuevos usuarios
         es_admin: false,
         es_primera_vez: true,
         fecha_registro: new Date(),
@@ -216,7 +218,7 @@ const getOrCreateUser = async (phoneNumber) => {
       // Registrar la transacción de créditos iniciales
       await TransaccionCredito.create({
         id_usuario: usuario.id,
-        cantidad: 2,
+        cantidad: CREDITOS_INICIALES,
         tipo: 'inicial',
         descripcion: 'Créditos iniciales por registro',
         fecha_transaccion: new Date()
@@ -676,7 +678,7 @@ const handleSearch = async (socket, sender, searchTerm, usuario) => {
       songResults.push(`Presiona ${i + 1}. ${titulo.toUpperCase()}`);
     }
     
-    // Construir el mensaje completo con el formato exacto requerido
+    // Añadir instrucciones al mensaje
     const resultMessage = [
       `🔍 *Resultados de búsqueda para "${searchTerm}"*`,
       "",
@@ -886,7 +888,7 @@ async function handleDirectSongRequest(socket, sender, searchTerm, usuario) {
     // Buscar canciones en Backblaze B2 y en la base de datos
     let canciones = [];
     try {
-      canciones = await backblazeController.buscarCanciones(searchTerm, 10);
+      canciones = await backblazeController.buscarCanciones(searchTerm, 320);
       logger.info(`Se encontraron ${canciones ? canciones.length : 0} canciones para "${searchTerm}"`);
     } catch (searchError) {
       logger.error(`Error en búsqueda de canciones: ${searchError.message}`);
@@ -896,9 +898,22 @@ async function handleDirectSongRequest(socket, sender, searchTerm, usuario) {
     // Verificar que canciones sea un array válido
     if (!canciones || !Array.isArray(canciones)) {
       logger.error(`Resultado de búsqueda inválido: ${typeof canciones}`);
-      canciones = [];
+      
+      // Si es un resultado directo de procedimiento almacenado
+      if (canciones && typeof canciones === 'object') {
+        // Si tiene una propiedad que contiene el array real (resultado de procedimiento almacenado)
+        if (canciones[0] && Array.isArray(canciones[0])) {
+          canciones = canciones[0];
+        } else {
+          // Si es un objeto único o no reconocible, convertir a array
+          canciones = [].concat(canciones).filter(Boolean);
+        }
+      } else {
+        // Si no es un objeto reconocible, inicializar como array vacío
+        canciones = [];
+      }
     }
-
+    
     if (canciones.length === 0) {
       // No se encontraron canciones
       await socket.sendMessage(sender, {
@@ -907,7 +922,7 @@ async function handleDirectSongRequest(socket, sender, searchTerm, usuario) {
       });
       return;
     }
-
+    
     // Preparar mensaje con opciones
     let optionsMessage = `🎵 *RESULTADOS DE BÚSQUEDA*\n\n` +
                        `Encontré ${canciones.length} ${canciones.length === 1 ? 'canción' : 'canciones'} ` +
