@@ -19,17 +19,54 @@ const logger = require('../config/logger');
  */
 async function buscarCanciones(termino, limite = 5, usarCache = true) {
   try {
-    // Usar el procedimiento almacenado optimizado con caché
-    const [results] = await sequelize.query(
-      'CALL buscar_canciones_cache(?, ?, ?)',
-      {
-        replacements: [termino, limite, usarCache],
-        type: Sequelize.QueryTypes.RAW
-      }
-    );
-    
-    // El procedimiento almacenado devuelve un array de resultsets, tomamos el primero
-    return results[0] || [];
+    // Intentar usar el procedimiento almacenado optimizado con caché
+    try {
+      const [results] = await sequelize.query(
+        'CALL buscar_canciones_cache(?, ?, ?)',
+        {
+          replacements: [termino, limite, usarCache],
+          type: Sequelize.QueryTypes.RAW
+        }
+      );
+      
+      // El procedimiento almacenado devuelve un array de resultsets, tomamos el primero
+      const canciones = results[0] || [];
+      logger.info(`Procedimiento almacenado encontró ${canciones.length} canciones para "${termino}"`);
+      return canciones;
+    } catch (procError) {
+      logger.warn(`Procedimiento almacenado falló, usando búsqueda directa: ${procError.message}`);
+      
+      // Respaldo: Búsqueda directa con SQL
+      const terminoNormalizado = `%${termino.toLowerCase()}%`;
+      
+      const cancionesSql = await sequelize.query(`
+        SELECT 
+          id,
+          nombre,
+          artista,
+          album,
+          genero,
+          archivo_nombre,
+          archivo_path,
+          tamanio_mb,
+          veces_reproducida,
+          'mysql' as origen
+        FROM canciones 
+        WHERE 
+          LOWER(nombre) LIKE ? OR 
+          LOWER(artista) LIKE ? OR 
+          LOWER(album) LIKE ? OR
+          LOWER(archivo_nombre) LIKE ?
+        ORDER BY veces_reproducida DESC, nombre ASC
+        LIMIT ?
+      `, {
+        replacements: [terminoNormalizado, terminoNormalizado, terminoNormalizado, terminoNormalizado, limite],
+        type: Sequelize.QueryTypes.SELECT
+      });
+      
+      logger.info(`Búsqueda directa encontró ${cancionesSql.length} canciones para "${termino}"`);
+      return cancionesSql;
+    }
   } catch (error) {
     logger.error('Error buscando canciones:', error);
     throw error;

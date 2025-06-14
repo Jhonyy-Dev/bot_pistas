@@ -175,42 +175,44 @@ async function verificarArchivoExiste(archivoPath) {
  */
 async function listarArchivos(prefix = '', maxItems = 1000) {
   try {
-    // Verificar que el cliente S3 esté configurado correctamente
-    if (!s3Client) {
-      throw new Error('Cliente S3 no inicializado');
-    }
-    
-    // Verificar que el bucket esté configurado
     if (!process.env.B2_BUCKET_NAME) {
-      throw new Error('Nombre del bucket no configurado en variables de entorno');
+      console.log('❌ B2_BUCKET_NAME no está configurado');
+      return [];
     }
     
-    console.log(`Listando archivos en bucket: ${process.env.B2_BUCKET_NAME}, prefijo: "${prefix}", max: ${maxItems}`);
+    console.log(`📂 Listando archivos en bucket: ${process.env.B2_BUCKET_NAME}, prefijo: "${prefix}", max: ${maxItems}`);
     
-    const command = new ListObjectsV2Command({
+    const params = {
       Bucket: process.env.B2_BUCKET_NAME,
       Prefix: prefix,
       MaxKeys: maxItems
-    });
+    };
     
-    const response = await s3Client.send(command);
+    console.log(`🔍 Parámetros de búsqueda:`, params);
     
-    // Verificar la respuesta
-    if (!response) {
-      throw new Error('Respuesta vacía de Backblaze B2');
+    const response = await s3Client.send(new ListObjectsV2Command(params));
+    
+    console.log(`📊 Respuesta de Backblaze - Truncated: ${response.IsTruncated}, Count: ${response.KeyCount}, Contents length: ${response.Contents?.length || 0}`);
+    
+    if (!response.Contents || response.Contents.length === 0) {
+      console.log('📭 No se encontraron archivos en Backblaze B2');
+      return [];
     }
     
-    console.log(`Respuesta de B2: ${JSON.stringify(response, null, 2)}`);
+    const archivos = response.Contents
+      .filter(obj => obj.Key && obj.Key.toLowerCase().endsWith('.mp3'))
+      .map(obj => ({
+        nombre: obj.Key,
+        tamaño: obj.Size,
+        fechaModificacion: obj.LastModified,
+        etag: obj.ETag
+      }));
     
-    // Asegurarse de que Contents sea un array, incluso si está vacío
-    const contents = response.Contents || [];
-    console.log(`Se encontraron ${contents.length} archivos en Backblaze B2`);
+    console.log(`🎵 Archivos MP3 filtrados: ${archivos.length}`);
     
-    return contents;
+    return archivos;
   } catch (error) {
-    console.error(`Error listando archivos de B2: ${error.message}`);
-    console.error(error.stack);
-    // En lugar de lanzar el error, devolver un array vacío para evitar errores en cascada
+    console.error('❌ Error al listar archivos de Backblaze B2:', error.message);
     return [];
   }
 }

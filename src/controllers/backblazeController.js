@@ -42,15 +42,21 @@ async function buscarCanciones(searchTerm, limit = 320) {
     
     // Si tenemos menos resultados que el límite, buscar también en Backblaze B2
     const faltantes = limit - resultadosFinales.length;
+    logger.info(`Faltan ${faltantes} resultados, procediendo a buscar en Backblaze B2`);
+    
     if (faltantes > 0) {
-      logger.info(`Buscando ${faltantes} canciones adicionales en Backblaze B2...`);
-      
-      // Obtener lista de archivos de Backblaze B2 (optimizado para búsquedas)
-      let archivos = [];
       try {
-        // Usar un límite más alto para archivos para asegurar coincidencias
-        archivos = await backblazeService.listarArchivos('', Math.min(5000, limit * 10));
-        logger.info(`Se obtuvieron ${archivos.length} archivos de Backblaze B2`);
+        // Obtener archivos de Backblaze B2 (con un límite razonable pero generoso)
+        const limiteFetch = Math.min(5000, limit * 10);
+        logger.info(`Obteniendo hasta ${limiteFetch} archivos de Backblaze B2`);
+        
+        let archivos = await backblazeService.listarArchivos('', limiteFetch);
+        logger.info(`Backblaze B2 devolvió ${archivos.length} archivos totales`);
+        
+        if (!archivos || archivos.length === 0) {
+          logger.warn('No se encontraron archivos en Backblaze B2');
+          return resultadosFinales;
+        }
         
         // Verificar que archivos sea un array válido
         if (!Array.isArray(archivos)) {

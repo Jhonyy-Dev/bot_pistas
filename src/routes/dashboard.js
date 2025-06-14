@@ -348,13 +348,21 @@ async function obtenerEstadisticasCompletas() {
       
       // Estadísticas por fecha
       descargasHoy,
-      descargasEstaSemana,
-      descargasEsteMes,
+      descargasAyer,
+      descargasSemana,
+      descargasMes,
       
-      // Usuarios nuevos
+      // Canciones más populares por veces reproducida
+      cancionesPopulares,
+      
+      // Distribución de géneros (si existe esa columna)
+      distribucionGeneros,
+      
+      // Usuarios nuevos por período
       usuariosNuevosHoy,
-      usuariosNuevosEstaSemana,
-      usuariosNuevosEsteMes,
+      usuariosNuevosAyer,
+      usuariosNuevosSemana,
+      usuariosNuevosMes,
       
       // Géneros más populares
       generosMasPopulares,
@@ -362,25 +370,20 @@ async function obtenerEstadisticasCompletas() {
       // Artistas más buscados
       artistasMasBuscados,
       
-      // Estadísticas de créditos
-      totalCreditosUsados,
-      totalCreditosRecargados,
-      
       // Actividad por horas
       actividadPorHoras
-      
     ] = await Promise.all([
       // Básicas
       Usuario.count(),
       Cancion.count(),
-      TransaccionCredito.count({ where: { tipo: 'descarga' } }),
+      Descarga.count(),
       
       // Usuarios más activos (últimos 30 días)
       sequelize.query(`
-        SELECT u.nombre, u.numero_telefono, COUNT(tc.id) as total_descargas
+        SELECT u.nombre, u.numero_telefono, COUNT(d.id) as total_descargas
         FROM usuarios u
-        LEFT JOIN transacciones_credito tc ON u.id = tc.usuario_id 
-        WHERE tc.tipo = 'descarga' AND tc.fecha_transaccion >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+        LEFT JOIN descargas d ON u.id = d.id_usuario 
+        WHERE d.fecha_descarga >= DATE_SUB(NOW(), INTERVAL 30 DAY)
         GROUP BY u.id
         ORDER BY total_descargas DESC
         LIMIT 10
@@ -388,70 +391,85 @@ async function obtenerEstadisticasCompletas() {
       
       // Canciones más descargadas
       sequelize.query(`
-        SELECT c.nombre, c.artista, c.genero, COUNT(d.id) as total_descargas
+        SELECT c.nombre, c.artista, COUNT(d.id) as total_descargas
         FROM canciones c
-        LEFT JOIN descargas d ON c.id = d.cancion_id
-        WHERE d.fecha_descarga >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-        GROUP BY c.id
+        LEFT JOIN descargas d ON c.id = d.id_cancion
+        GROUP BY c.id, c.nombre, c.artista
         ORDER BY total_descargas DESC
         LIMIT 10
       `, { type: sequelize.QueryTypes.SELECT }),
       
-      // Descargas por período
-      TransaccionCredito.count({ 
-        where: { 
-          tipo: 'descarga',
-          fecha_transaccion: {
-            [Op.gte]: new Date(new Date().setHours(0,0,0,0))
-          }
-        } 
-      }),
-      TransaccionCredito.count({ 
-        where: { 
-          tipo: 'descarga',
-          fecha_transaccion: {
-            [Op.gte]: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
-          }
-        } 
-      }),
-      TransaccionCredito.count({ 
-        where: { 
-          tipo: 'descarga',
-          fecha_transaccion: {
-            [Op.gte]: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-          }
-        } 
-      }),
+      // Estadísticas por fecha
+      sequelize.query(`
+        SELECT COUNT(*) as descargas_hoy
+        FROM descargas 
+        WHERE DATE(fecha_descarga) = CURDATE()
+      `, { type: sequelize.QueryTypes.SELECT }),
+      sequelize.query(`
+        SELECT COUNT(*) as descargas_ayer
+        FROM descargas 
+        WHERE DATE(fecha_descarga) = DATE_SUB(CURDATE(), INTERVAL 1 DAY)
+      `, { type: sequelize.QueryTypes.SELECT }),
+      sequelize.query(`
+        SELECT COUNT(*) as descargas_semana
+        FROM descargas 
+        WHERE fecha_descarga >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
+      `, { type: sequelize.QueryTypes.SELECT }),
+      sequelize.query(`
+        SELECT COUNT(*) as descargas_mes
+        FROM descargas 
+        WHERE fecha_descarga >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+      `, { type: sequelize.QueryTypes.SELECT }),
+      
+      // Canciones más populares por veces reproducida
+      sequelize.query(`
+        SELECT c.nombre, c.artista, COUNT(d.id) as total_reproducciones
+        FROM canciones c
+        LEFT JOIN reproducciones d ON c.id = d.id_cancion
+        GROUP BY c.id, c.nombre, c.artista
+        ORDER BY total_reproducciones DESC
+        LIMIT 10
+      `, { type: sequelize.QueryTypes.SELECT }),
+      
+      // Distribución de géneros (si existe esa columna)
+      sequelize.query(`
+        SELECT c.genero, COUNT(d.id) as total_descargas
+        FROM canciones c
+        LEFT JOIN descargas d ON c.id = d.id_cancion
+        WHERE c.genero IS NOT NULL
+        GROUP BY c.genero
+        ORDER BY total_descargas DESC
+        LIMIT 10
+      `, { type: sequelize.QueryTypes.SELECT }),
       
       // Usuarios nuevos por período
-      Usuario.count({ 
-        where: { 
-          fecha_registro: {
-            [Op.gte]: new Date(new Date().setHours(0,0,0,0))
-          }
-        } 
-      }),
-      Usuario.count({ 
-        where: { 
-          fecha_registro: {
-            [Op.gte]: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
-          }
-        } 
-      }),
-      Usuario.count({ 
-        where: { 
-          fecha_registro: {
-            [Op.gte]: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-          }
-        } 
-      }),
+      sequelize.query(`
+        SELECT COUNT(*) as usuarios_nuevos_hoy
+        FROM usuarios 
+        WHERE DATE(fecha_registro) = CURDATE()
+      `, { type: sequelize.QueryTypes.SELECT }),
+      sequelize.query(`
+        SELECT COUNT(*) as usuarios_nuevos_ayer
+        FROM usuarios 
+        WHERE DATE(fecha_registro) = DATE_SUB(CURDATE(), INTERVAL 1 DAY)
+      `, { type: sequelize.QueryTypes.SELECT }),
+      sequelize.query(`
+        SELECT COUNT(*) as usuarios_nuevos_semana
+        FROM usuarios 
+        WHERE fecha_registro >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
+      `, { type: sequelize.QueryTypes.SELECT }),
+      sequelize.query(`
+        SELECT COUNT(*) as usuarios_nuevos_mes
+        FROM usuarios 
+        WHERE fecha_registro >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+      `, { type: sequelize.QueryTypes.SELECT }),
       
       // Géneros más populares
       sequelize.query(`
         SELECT c.genero, COUNT(d.id) as total_descargas
         FROM canciones c
-        LEFT JOIN descargas d ON c.id = d.cancion_id
-        WHERE c.genero IS NOT NULL AND c.genero != ''
+        LEFT JOIN descargas d ON c.id = d.id_cancion
+        WHERE c.genero IS NOT NULL
         GROUP BY c.genero
         ORDER BY total_descargas DESC
         LIMIT 10
@@ -461,26 +479,19 @@ async function obtenerEstadisticasCompletas() {
       sequelize.query(`
         SELECT c.artista, COUNT(d.id) as total_descargas
         FROM canciones c
-        LEFT JOIN descargas d ON c.id = d.cancion_id
-        WHERE c.artista IS NOT NULL AND c.artista != ''
+        LEFT JOIN descargas d ON c.id = d.id_cancion
+        WHERE c.artista IS NOT NULL
         GROUP BY c.artista
         ORDER BY total_descargas DESC
         LIMIT 10
       `, { type: sequelize.QueryTypes.SELECT }),
       
-      // Créditos
-      sequelize.query(`
-        SELECT SUM(CASE WHEN tipo = 'descarga' THEN ABS(cantidad) ELSE 0 END) as creditos_usados,
-               SUM(CASE WHEN tipo = 'recarga' THEN cantidad ELSE 0 END) as creditos_recargados
-        FROM transacciones_credito
-      `, { type: sequelize.QueryTypes.SELECT }),
-      
       // Actividad por horas
       sequelize.query(`
-        SELECT HOUR(fecha_transaccion) as hora, COUNT(*) as actividad
-        FROM transacciones_credito
-        WHERE fecha_transaccion >= DATE_SUB(NOW(), INTERVAL 7 DAY)
-        GROUP BY HOUR(fecha_transaccion)
+        SELECT HOUR(fecha_descarga) as hora, COUNT(*) as actividad
+        FROM descargas
+        WHERE fecha_descarga >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
+        GROUP BY HOUR(fecha_descarga)
         ORDER BY hora
       `, { type: sequelize.QueryTypes.SELECT })
     ]);
@@ -491,25 +502,26 @@ async function obtenerEstadisticasCompletas() {
         totalUsuarios,
         totalCanciones,
         totalDescargas,
-        totalCreditosUsados: totalCreditosUsados[0]?.creditos_usados || 0,
-        totalCreditosRecargados: totalCreditosUsados[0]?.creditos_recargados || 0
       },
       
       // Actividad por período
       actividad: {
-        descargasHoy,
-        descargasEstaSemana,
-        descargasEsteMes,
-        usuariosNuevosHoy,
-        usuariosNuevosEstaSemana,
-        usuariosNuevosEsteMes
+        descargasHoy: descargasHoy[0]?.descargas_hoy || 0,
+        descargasAyer: descargasAyer[0]?.descargas_ayer || 0,
+        descargasSemana: descargasSemana[0]?.descargas_semana || 0,
+        descargasMes: descargasMes[0]?.descargas_mes || 0,
+        usuariosNuevosHoy: usuariosNuevosHoy[0]?.usuarios_nuevos_hoy || 0,
+        usuariosNuevosAyer: usuariosNuevosAyer[0]?.usuarios_nuevos_ayer || 0,
+        usuariosNuevosSemana: usuariosNuevosSemana[0]?.usuarios_nuevos_semana || 0,
+        usuariosNuevosMes: usuariosNuevosMes[0]?.usuarios_nuevos_mes || 0
       },
       
       // Rankings
       rankings: {
         usuariosActivos: usuariosActivos.slice(0, 10),
         cancionesMasDescargadas: cancionesMasDescargadas.slice(0, 10),
-        generosMasPopulares: generosMasPopulares.slice(0, 8),
+        cancionesPopulares: cancionesPopulares.slice(0, 10),
+        generosMasPopulares: distribucionGeneros.slice(0, 8),
         artistasMasBuscados: artistasMasBuscados.slice(0, 10)
       },
       
