@@ -188,6 +188,10 @@
         .log-info { background-color: rgba(59, 130, 246, 0.1); color: #93c5fd; }
         .log-error { background-color: rgba(239, 68, 68, 0.1); color: #fca5a5; }
         .log-warn { background-color: rgba(245, 158, 11, 0.1); color: #fcd34d; }
+        
+        /* Asegurar que todo el texto sea visible */
+        .text-muted { color: #a0aec0 !important; }
+        p, span, small { color: var(--text-light); }
 
         .loading-spinner {
             border: 3px solid rgba(255,255,255,0.1);
@@ -531,11 +535,40 @@
                 const data = await response.json();
                 
                 updateConnectionStatus(data.connected, data.lastConnection);
-                updateQRCode(data.qrCode);
+                
+                // Asegurarnos de que el QR se actualice correctamente
+                if (data.qrCode) {
+                    updateQRCode(data.qrCode);
+                    // Guardar en localStorage para persistencia
+                    localStorage.setItem('lastQrCode', data.qrCode);
+                    localStorage.setItem('qrTimestamp', Date.now());
+                } else if (data.connected) {
+                    // Si está conectado, mostrar mensaje de conectado
+                    updateQRCode(null);
+                    localStorage.removeItem('lastQrCode');
+                } else {
+                    // Si no hay QR y no está conectado, intentar recuperar del localStorage
+                    const savedQR = localStorage.getItem('lastQrCode');
+                    const qrTimestamp = localStorage.getItem('qrTimestamp');
+                    
+                    // Solo usar el QR guardado si tiene menos de 2 minutos
+                    if (savedQR && qrTimestamp && (Date.now() - parseInt(qrTimestamp)) < 120000) {
+                        updateQRCode(savedQR);
+                    } else {
+                        updateQRCode(null);
+                        localStorage.removeItem('lastQrCode');
+                    }
+                }
+                
                 updateStats(data.stats);
                 updateTimestamp();
             } catch (error) {
                 console.error('Error fetching dashboard data:', error);
+                // En caso de error, intentar mostrar el QR guardado
+                const savedQR = localStorage.getItem('lastQrCode');
+                if (savedQR) {
+                    updateQRCode(savedQR);
+                }
             }
         }
 

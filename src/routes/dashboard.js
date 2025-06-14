@@ -9,6 +9,7 @@ const path = require('path');
 const fs = require('fs-extra');
 const { Usuario, Cancion, TransaccionCredito, Descarga } = require('../database/models');
 const { sequelize } = require('../config/database');
+const { Op } = require('sequelize');
 const logger = require('../config/logger');
 
 // Estado global del bot
@@ -51,7 +52,14 @@ router.get('/', async (req, res) => {
 // Endpoint para obtener datos del dashboard
 router.get('/api/dashboard-data', async (req, res) => {
     try {
-        const stats = await obtenerEstadisticasCompletas();
+        // Intentar obtener estadísticas, pero manejar posibles errores
+        let stats = { totalUsuarios: 0, totalCanciones: 0, totalDescargas: 0 };
+        try {
+            stats = await obtenerEstadisticasCompletas();
+        } catch (statsError) {
+            logger.error(`Error obteniendo estadísticas: ${statsError.message}`);
+            // Continuar con valores predeterminados si hay error
+        }
         
         res.json({
             connected: botStatus.isConnected,
@@ -301,7 +309,7 @@ async function obtenerEstadisticasCompletas() {
         where: { 
           tipo: 'descarga',
           fecha_transaccion: {
-            [sequelize.Op.gte]: new Date(new Date().setHours(0,0,0,0))
+            [Op.gte]: new Date(new Date().setHours(0,0,0,0))
           }
         } 
       }),
@@ -309,7 +317,7 @@ async function obtenerEstadisticasCompletas() {
         where: { 
           tipo: 'descarga',
           fecha_transaccion: {
-            [sequelize.Op.gte]: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+            [Op.gte]: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
           }
         } 
       }),
@@ -317,7 +325,7 @@ async function obtenerEstadisticasCompletas() {
         where: { 
           tipo: 'descarga',
           fecha_transaccion: {
-            [sequelize.Op.gte]: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+            [Op.gte]: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
           }
         } 
       }),
@@ -326,21 +334,21 @@ async function obtenerEstadisticasCompletas() {
       Usuario.count({ 
         where: { 
           fecha_registro: {
-            [sequelize.Op.gte]: new Date(new Date().setHours(0,0,0,0))
+            [Op.gte]: new Date(new Date().setHours(0,0,0,0))
           }
         } 
       }),
       Usuario.count({ 
         where: { 
           fecha_registro: {
-            [sequelize.Op.gte]: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+            [Op.gte]: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
           }
         } 
       }),
       Usuario.count({ 
         where: { 
           fecha_registro: {
-            [sequelize.Op.gte]: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+            [Op.gte]: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
           }
         } 
       }),
