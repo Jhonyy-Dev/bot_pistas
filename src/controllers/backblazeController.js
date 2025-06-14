@@ -50,7 +50,7 @@ async function buscarCanciones(searchTerm, limit = 320) {
         const limiteFetch = Math.min(5000, limit * 10);
         logger.info(`Obteniendo hasta ${limiteFetch} archivos de Backblaze B2`);
         
-        let archivos = await backblazeService.listarArchivos('', limiteFetch);
+        const archivos = await backblazeService.listarArchivos('', limiteFetch);
         logger.info(`Backblaze B2 devolvió ${archivos.length} archivos totales`);
         
         if (!archivos || archivos.length === 0) {
@@ -60,9 +60,94 @@ async function buscarCanciones(searchTerm, limit = 320) {
         
         // Verificar que archivos sea un array válido
         if (!Array.isArray(archivos)) {
-          logger.error(`La respuesta de listarArchivos no es un array: ${typeof archivos}`);
-          archivos = [];
+          logger.error('La respuesta de Backblaze B2 no es un array válido');
+          return resultadosFinales;
         }
+        
+        // Si no hay archivos, retornar lo que ya tenemos
+        if (archivos.length === 0) {
+          logger.info('No se encontraron archivos en Backblaze B2');
+          return resultadosFinales;
+        }
+        
+        // Filtrar archivos por el término de búsqueda (solo MP3)
+        // Normalizar el término de búsqueda para eliminar caracteres especiales
+        const normalizedSearchTerms = [
+          searchTerm.toLowerCase().trim(),
+          searchTerm.toLowerCase().replace(/^[-\s]+/, '').replace(/\s+/g, ' ').trim(),
+          searchTerm.toLowerCase().replace(/[-_]/g, ' ').trim(),
+          searchTerm.toLowerCase().replace(/\s+/g, '').trim() // Sin espacios
+        ];
+        
+        logger.info(`Términos de búsqueda normalizados: ${JSON.stringify(normalizedSearchTerms)}`);
+        
+        // Obtener nombres ya existentes para evitar duplicados
+        const nombresExistentes = new Set(resultadosFinales.map(cancion => 
+          cancion.archivo_nombre || cancion.nombre
+        ));
+        
+        // Buscar coincidencias con mayor flexibilidad
+        const resultadosB2 = [];
+        
+        for (const archivo of archivos) {
+          try {
+            // Verificar que el archivo tenga las propiedades necesarias
+            if (!archivo || (!archivo.Key && !archivo.nombre)) {
+              continue;
+            }
+            
+            // Usar Key si existe, sino usar nombre (compatibilidad con diferentes formatos de respuesta)
+            const nombreArchivo = archivo.Key || archivo.nombre;
+            
+            // Solo archivos MP3
+            if (!nombreArchivo.toLowerCase().endsWith('.mp3')) continue;
+            
+            // Evitar duplicados
+            if (nombresExistentes.has(nombreArchivo)) continue;
+            
+            // Normalizar el nombre del archivo para la comparación
+            const normalizedFileNames = [
+              nombreArchivo.toLowerCase(),
+              nombreArchivo.toLowerCase().replace(/^[-\s]+/, '').replace(/\s+/g, ' ').trim(),
+              nombreArchivo.toLowerCase().replace(/[-_]/g, ' ').trim(),
+              nombreArchivo.toLowerCase().replace(/\s+/g, '').trim() // Sin espacios
+            ];
+            
+            // Verificar coincidencias más flexibles
+            let coincidencia = false;
+            for (const searchTerm of normalizedSearchTerms) {
+              for (const fileName of normalizedFileNames) {
+                if (fileName.includes(searchTerm) || searchTerm.includes(fileName.split('.')[0])) {
+                  coincidencia = true;
+                  break;
+                }
+              }
+              if (coincidencia) break;
+            }
+            
+            if (coincidencia) {
+              resultadosB2.push({
+                id: null, // No existe en la base de datos
+                nombre: nombreArchivo.replace('.mp3', ''),
+                artista: 'Desconocido',
+                archivo_nombre: nombreArchivo,
+                archivo_path: nombreArchivo,
+                tamanio_mb: archivo.Size || archivo.tamaño ? ((archivo.Size || archivo.tamaño) / (1024 * 1024)).toFixed(2) : '0',
+                veces_reproducida: 0,
+                es_backblaze: true // Marcar como archivo de Backblaze
+              });
+              
+              // Si alcanzamos el límite de faltantes, detenemos la búsqueda
+              if (resultadosB2.length >= faltantes) break;
+            }
+          } catch (fileError) {
+            logger.error(`Error procesando archivo: ${fileError.message}`);
+            // Continuar con el siguiente archivo
+          }
+        }
+        
+        logger.info(`Se encontraron ${resultadosB2.length} canciones adicionales en Backblaze B2`);
+        resultadosFinales = [...resultadosFinales, ...resultadosB2];
       } catch (b2Error) {
         logger.error(`Error al listar archivos de Backblaze B2: ${b2Error.message}`);
         // Si hay error con B2 pero tenemos resultados de DB, los devolvemos
@@ -71,88 +156,6 @@ async function buscarCanciones(searchTerm, limit = 320) {
         }
         return [];
       }
-      
-      // Si no hay archivos, retornar lo que ya tenemos
-      if (archivos.length === 0) {
-        logger.info('No se encontraron archivos en Backblaze B2');
-        return resultadosFinales;
-      }
-      
-      // Filtrar archivos por el término de búsqueda (solo MP3)
-      // Normalizar el término de búsqueda para eliminar caracteres especiales
-      const normalizedSearchTerms = [
-        searchTerm.toLowerCase().trim(),
-        searchTerm.toLowerCase().replace(/^[-\s]+/, '').replace(/\s+/g, ' ').trim(),
-        searchTerm.toLowerCase().replace(/[-_]/g, ' ').trim(),
-        searchTerm.toLowerCase().replace(/\s+/g, '').trim() // Sin espacios
-      ];
-      
-      logger.info(`Términos de búsqueda normalizados: ${JSON.stringify(normalizedSearchTerms)}`);
-      
-      // Obtener nombres ya existentes para evitar duplicados
-      const nombresExistentes = new Set(resultadosFinales.map(cancion => 
-        cancion.archivo_nombre || cancion.nombre
-      ));
-      
-      // Buscar coincidencias con mayor flexibilidad
-      const resultadosB2 = [];
-      
-      for (const archivo of archivos) {
-        try {
-          // Verificar que el archivo tenga la propiedad Key
-          if (!archivo || !archivo.Key) {
-            continue;
-          }
-          
-          // Solo archivos MP3
-          if (!archivo.Key.toLowerCase().endsWith('.mp3')) continue;
-          
-          // Evitar duplicados
-          if (nombresExistentes.has(archivo.Key)) continue;
-          
-          // Normalizar el nombre del archivo para la comparación
-          const normalizedFileNames = [
-            archivo.Key.toLowerCase(),
-            archivo.Key.toLowerCase().replace(/^[-\s]+/, '').replace(/\s+/g, ' ').trim(),
-            archivo.Key.toLowerCase().replace(/[-_]/g, ' ').trim(),
-            archivo.Key.toLowerCase().replace(/\s+/g, '').trim() // Sin espacios
-          ];
-          
-          // Verificar coincidencias más flexibles
-          let coincidencia = false;
-          for (const searchTerm of normalizedSearchTerms) {
-            for (const fileName of normalizedFileNames) {
-              if (fileName.includes(searchTerm) || searchTerm.includes(fileName.split('.')[0])) {
-                coincidencia = true;
-                break;
-              }
-            }
-            if (coincidencia) break;
-          }
-          
-          if (coincidencia) {
-            resultadosB2.push({
-              id: null, // No existe en la base de datos
-              nombre: archivo.Key.replace('.mp3', ''),
-              artista: 'Desconocido',
-              archivo_nombre: archivo.Key,
-              archivo_path: archivo.Key,
-              tamanio_mb: archivo.Size ? (archivo.Size / (1024 * 1024)).toFixed(2) : '0',
-              veces_reproducida: 0,
-              es_backblaze: true // Marcar como archivo de Backblaze
-            });
-            
-            // Si alcanzamos el límite de faltantes, detenemos la búsqueda
-            if (resultadosB2.length >= faltantes) break;
-          }
-        } catch (fileError) {
-          logger.error(`Error procesando archivo: ${fileError.message}`);
-          // Continuar con el siguiente archivo
-        }
-      }
-      
-      logger.info(`Se encontraron ${resultadosB2.length} canciones adicionales en Backblaze B2`);
-      resultadosFinales = [...resultadosFinales, ...resultadosB2];
     }
     
     // Limitar los resultados finales

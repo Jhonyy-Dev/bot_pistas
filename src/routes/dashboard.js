@@ -423,11 +423,10 @@ async function obtenerEstadisticasCompletas() {
       
       // Canciones más populares por veces reproducida
       sequelize.query(`
-        SELECT c.nombre, c.artista, COUNT(d.id) as total_reproducciones
+        SELECT c.nombre, c.artista, c.veces_reproducida as total_reproducciones
         FROM canciones c
-        LEFT JOIN reproducciones d ON c.id = d.id_cancion
-        GROUP BY c.id, c.nombre, c.artista
-        ORDER BY total_reproducciones DESC
+        WHERE c.veces_reproducida > 0
+        ORDER BY c.veces_reproducida DESC
         LIMIT 10
       `, { type: sequelize.QueryTypes.SELECT }),
       
