@@ -20,6 +20,10 @@ class WhatsAppService {
     try {
       logger.info('Inicializando servicio de WhatsApp...');
       
+      // Reiniciar estado
+      this.isConnected = false;
+      this.qrCode = null;
+      
       // Configurar autenticación multi-archivo
       const { state, saveCreds } = await useMultiFileAuthState(this.sessionPath);
       
@@ -46,9 +50,26 @@ class WhatsAppService {
 
       logger.info('Servicio de WhatsApp inicializado correctamente');
       
+      // Actualizar estado en dashboard para asegurar que se muestre como desconectado
+      updateBotStatus({
+        isConnected: false,
+        qrCode: null,
+        lastConnection: new Date().toLocaleString()
+      });
+      
+      return true;
     } catch (error) {
       logger.error(`Error inicializando WhatsApp: ${error.message}`);
-      throw error;
+      
+      // Actualizar estado en dashboard incluso si hay error
+      updateBotStatus({
+        isConnected: false,
+        qrCode: null,
+        lastConnection: new Date().toLocaleString()
+      });
+      
+      // No lanzar el error, solo registrarlo
+      return false;
     }
   }
 
@@ -167,6 +188,69 @@ class WhatsAppService {
       }
     } catch (error) {
       logger.error(`Error cerrando sesión: ${error.message}`);
+      throw error;
+    }
+  }
+  
+  /**
+   * Reinicia el servicio de WhatsApp para generar un nuevo código QR
+   */
+  async reiniciar() {
+    try {
+      logger.info('Reiniciando servicio de WhatsApp...');
+      
+      // Si hay una sesión activa, cerrarla primero
+      if (this.socket) {
+        try {
+          // Desconectar todos los listeners para evitar duplicados
+          this.socket.ev.removeAllListeners('connection.update');
+          this.socket.ev.removeAllListeners('creds.update');
+          this.socket.ev.removeAllListeners('messages.upsert');
+          
+          // Intentar cerrar sesión
+          await this.socket.logout();
+        } catch (logoutError) {
+          logger.warn(`Error al cerrar sesión durante reinicio: ${logoutError.message}`);
+          // Continuamos con el reinicio aunque falle el logout
+        }
+        
+        this.socket = null;
+      }
+      
+      // Reiniciar flags
+      this.isConnected = false;
+      this.qrCode = null;
+      this.reconnectAttempts = 0;
+      
+      // Actualizar estado en dashboard
+      updateBotStatus({
+        isConnected: false,
+        qrCode: null,
+        lastConnection: new Date().toLocaleString()
+      });
+      
+      // Esperar un momento para asegurar que todo se haya limpiado
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Inicializar nuevamente el cliente
+      const initResult = await this.initialize();
+      
+      if (initResult) {
+        logger.info('Servicio de WhatsApp reiniciado correctamente');
+        return true;
+      } else {
+        throw new Error('Error al inicializar el servicio de WhatsApp');
+      }
+    } catch (error) {
+      logger.error(`Error reiniciando servicio de WhatsApp: ${error.message}`);
+      
+      // Actualizar estado en dashboard incluso si hay error
+      updateBotStatus({
+        isConnected: false,
+        qrCode: null,
+        lastConnection: new Date().toLocaleString()
+      });
+      
       throw error;
     }
   }

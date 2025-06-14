@@ -147,6 +147,22 @@
             box-shadow: 0 8px 25px rgba(239, 68, 68, 0.4);
             color: white;
         }
+        
+        .btn-warning {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            border: none;
+            border-radius: 8px;
+            padding: 0.75rem 1.5rem;
+            color: white;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-warning:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(245, 158, 11, 0.4);
+            color: white;
+        }
 
         .btn-stats {
             background: var(--info-gradient);
@@ -278,11 +294,21 @@
                         <small>Última conexión: <span id="lastConnection">--</span></small>
                     </p>
                     
-                    <!-- Botón de Cerrar Sesión (solo visible cuando está conectado) -->
-                    <div id="logoutButtonContainer" class="mt-3" style="display: none;">
-                        <button class="btn btn-logout" onclick="cerrarSesion()">
-                            <i class="fas fa-sign-out-alt me-2"></i>Cerrar Sesión y Generar Nuevo QR
-                        </button>
+                    <!-- Botones de acción -->
+                    <div class="mt-3 d-flex flex-column gap-2">
+                        <!-- Botón de Cerrar Sesión (visible cuando está conectado) -->
+                        <div id="logoutButtonContainer" style="display: none;">
+                            <button class="btn btn-logout w-100" onclick="cerrarSesion()">
+                                <i class="fas fa-sign-out-alt me-2"></i>Cerrar Sesión
+                            </button>
+                        </div>
+                        
+                        <!-- Botón de Reiniciar QR (siempre visible) -->
+                        <div>
+                            <button class="btn btn-warning w-100" onclick="reiniciarQR()">
+                                <i class="fas fa-sync-alt me-2"></i>Reiniciar QR y Borrar Sesión
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -471,7 +497,7 @@
             
             // Mostrar loading
             logoutContainer.innerHTML = `
-                <button class="btn btn-logout" disabled>
+                <button class="btn btn-logout w-100" disabled>
                     <div class="loading-spinner" style="width: 20px; height: 20px; display: inline-block; margin-right: 8px;"></div>
                     Cerrando sesión...
                 </button>
@@ -508,6 +534,60 @@
                 logoutContainer.innerHTML = originalContent;
             }
         }
+        
+        // Función para reiniciar QR y borrar archivos de sesión
+        async function reiniciarQR() {
+            if (!confirm('¿Estás seguro de que quieres reiniciar el código QR? Esto borrará todos los archivos de sesión actuales.')) {
+                return;
+            }
+            
+            // Obtener el botón y guardar su contenido original
+            const btnReiniciar = document.querySelector('.btn-warning');
+            const originalContent = btnReiniciar.innerHTML;
+            
+            // Mostrar loading
+            btnReiniciar.disabled = true;
+            btnReiniciar.innerHTML = `
+                <div class="loading-spinner" style="width: 20px; height: 20px; display: inline-block; margin-right: 8px;"></div>
+                Reiniciando QR...
+            `;
+            
+            try {
+                // Llamar al endpoint de reinicio de QR
+                const response = await fetch('/api/reset-qr', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    // Actualizar estado inmediatamente
+                    updateConnectionStatus(false);
+                    updateQRCode(null);
+                    localStorage.removeItem('lastQrCode');
+                    
+                    // Mostrar mensaje de éxito
+                    showAlert('Código QR reiniciado correctamente. Generando nuevo QR...', 'success');
+                    
+                    // Actualizar dashboard después de un breve delay
+                    setTimeout(() => {
+                        fetchDashboardData();
+                    }, 2000);
+                } else {
+                    throw new Error(result.message || 'Error al reiniciar el código QR');
+                }
+            } catch (error) {
+                console.error('Error al reiniciar QR:', error);
+                showAlert('Error al reiniciar QR: ' + error.message, 'danger');
+            } finally {
+                // Restaurar el botón
+                btnReiniciar.disabled = false;
+                btnReiniciar.innerHTML = originalContent;
+            }
+        }
 
         // Mostrar alertas
         function showAlert(message, type) {
@@ -538,25 +618,42 @@
                 
                 // Asegurarnos de que el QR se actualice correctamente
                 if (data.qrCode) {
+                    console.log('QR recibido del servidor');
                     updateQRCode(data.qrCode);
                     // Guardar en localStorage para persistencia
                     localStorage.setItem('lastQrCode', data.qrCode);
                     localStorage.setItem('qrTimestamp', Date.now());
                 } else if (data.connected) {
                     // Si está conectado, mostrar mensaje de conectado
+                    console.log('Bot conectado, eliminando QR guardado');
                     updateQRCode(null);
                     localStorage.removeItem('lastQrCode');
+                    localStorage.removeItem('qrTimestamp');
                 } else {
+                    console.log('Sin QR del servidor y desconectado');
                     // Si no hay QR y no está conectado, intentar recuperar del localStorage
                     const savedQR = localStorage.getItem('lastQrCode');
                     const qrTimestamp = localStorage.getItem('qrTimestamp');
                     
                     // Solo usar el QR guardado si tiene menos de 2 minutos
                     if (savedQR && qrTimestamp && (Date.now() - parseInt(qrTimestamp)) < 120000) {
+                        console.log('Usando QR guardado en localStorage');
                         updateQRCode(savedQR);
                     } else {
+                        console.log('QR guardado expirado o no disponible');
                         updateQRCode(null);
                         localStorage.removeItem('lastQrCode');
+                        localStorage.removeItem('qrTimestamp');
+                        
+                        // Mostrar mensaje de espera específico
+                        const qrContainer = document.getElementById('qrContainer');
+                        qrContainer.innerHTML = `
+                            <div class="text-center">
+                                <div class="loading-spinner mb-3"></div>
+                                <p class="text-info">Esperando nuevo código QR...</p>
+                                <p class="text-muted">Si el código no aparece en 10 segundos, intenta reiniciar el QR con el botón amarillo</p>
+                            </div>
+                        `;
                     }
                 }
                 

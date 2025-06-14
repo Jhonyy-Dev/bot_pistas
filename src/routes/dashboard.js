@@ -177,6 +177,28 @@ router.post('/api/logout', async (req, res) => {
   }
 });
 
+// Endpoint para reiniciar el código QR
+router.post('/api/reset-qr', async (req, res) => {
+  try {
+    if (!whatsappServiceRef) {
+      throw new Error('Servicio de WhatsApp no disponible');
+    }
+    
+    // Limpiar archivos de sesión
+    const sessionDir = path.join(process.cwd(), '.wwebjs_auth');
+    await fs.emptyDir(sessionDir);
+    logger.info('Archivos de sesión eliminados correctamente');
+    
+    // Reiniciar el servicio de WhatsApp
+    await whatsappServiceRef.reiniciar();
+    
+    res.json({ success: true, message: 'Código QR reiniciado correctamente' });
+  } catch (error) {
+    logger.error(`Error al reiniciar QR: ${error.message}`);
+    res.status(500).json({ success: false, message: `Error al reiniciar QR: ${error.message}` });
+  }
+});
+
 /**
  * API para obtener QR Code
  */
