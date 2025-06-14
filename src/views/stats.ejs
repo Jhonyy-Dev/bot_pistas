@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><%= title %></title>
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Font Awesome -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        .navbar {
+            background: rgba(255, 255, 255, 0.95) !important;
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .container-fluid {
+            padding: 2rem;
+        }
+        
+        .stats-card {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            transition: transform 0.3s ease;
+        }
+        
+        .stats-card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .metric-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            text-align: center;
+            margin-bottom: 1rem;
+        }
+        
+        .metric-card.success {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        }
+        
+        .metric-card.warning {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+        
+        .metric-card.info {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        }
+        
+        .metric-value {
+            font-size: 2.5rem;
+            font-weight: bold;
+            margin-bottom: 0.5rem;
+        }
+        
+        .metric-label {
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+        
+        .table-responsive {
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        
+        .table {
+            margin-bottom: 0;
+        }
+        
+        .table thead {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .chart-container {
+            position: relative;
+            height: 300px;
+            margin: 1rem 0;
+        }
+        
+        .progress-custom {
+            height: 8px;
+            border-radius: 10px;
+            background: rgba(0, 0, 0, 0.1);
+        }
+        
+        .progress-bar-custom {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 10px;
+        }
+        
+        .badge-custom {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+        }
+    </style>
+</head>
+<body>
+    <!-- Navbar -->
+    <nav class="navbar navbar-expand-lg navbar-light">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/dashboard">
+                <i class="fas fa-music me-2"></i>
+                <strong>BOT_PISTAS</strong> Estadísticas
+            </a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="/dashboard">
+                    <i class="fas fa-arrow-left me-1"></i>
+                    Volver al Dashboard
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid">
+        <!-- Header -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="stats-card">
+                    <h2><i class="fas fa-chart-bar me-2"></i>Estadísticas Detalladas</h2>
+                    <p class="text-muted mb-0">Análisis completo del rendimiento del bot • Actualizado: <%= timestamp %></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Métricas Principales -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="metric-card">
+                    <div class="metric-value"><%= stats.resumen.totalUsuarios %></div>
+                    <div class="metric-label">
+                        <i class="fas fa-users me-1"></i>
+                        Usuarios Totales
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="metric-card success">
+                    <div class="metric-value"><%= stats.resumen.totalCanciones %></div>
+                    <div class="metric-label">
+                        <i class="fas fa-music me-1"></i>
+                        Canciones Disponibles
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="metric-card warning">
+                    <div class="metric-value"><%= stats.resumen.totalDescargas %></div>
+                    <div class="metric-label">
+                        <i class="fas fa-download me-1"></i>
+                        Descargas Totales
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="metric-card info">
+                    <div class="metric-value"><%= stats.resumen.totalCreditosUsados %></div>
+                    <div class="metric-label">
+                        <i class="fas fa-coins me-1"></i>
+                        Créditos Usados
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Actividad por Período -->
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <div class="stats-card">
+                    <h4><i class="fas fa-calendar-day me-2"></i>Actividad por Período</h4>
+                    <div class="row">
+                        <div class="col-6">
+                            <h5 class="text-primary">Descargas</h5>
+                            <p><strong>Hoy:</strong> <%= stats.actividad.descargasHoy %></p>
+                            <p><strong>Esta semana:</strong> <%= stats.actividad.descargasEstaSemana %></p>
+                            <p><strong>Este mes:</strong> <%= stats.actividad.descargasEsteMes %></p>
+                        </div>
+                        <div class="col-6">
+                            <h5 class="text-success">Usuarios Nuevos</h5>
+                            <p><strong>Hoy:</strong> <%= stats.actividad.usuariosNuevosHoy %></p>
+                            <p><strong>Esta semana:</strong> <%= stats.actividad.usuariosNuevosEstaSemana %></p>
+                            <p><strong>Este mes:</strong> <%= stats.actividad.usuariosNuevosEsteMes %></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="stats-card">
+                    <h4><i class="fas fa-chart-line me-2"></i>Actividad por Horas</h4>
+                    <div class="chart-container">
+                        <canvas id="activityChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Rankings -->
+        <div class="row mb-4">
+            <!-- Usuarios Más Activos -->
+            <div class="col-md-6">
+                <div class="stats-card">
+                    <h4><i class="fas fa-trophy me-2"></i>Usuarios Más Activos</h4>
+                    <div class="table-responsive">
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Usuario</th>
+                                    <th>Descargas</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <% stats.rankings.usuariosActivos.forEach((usuario, index) => { %>
+                                <tr>
+                                    <td><span class="badge-custom"><%= index + 1 %></span></td>
+                                    <td><%= usuario.nombre %></td>
+                                    <td><strong><%= usuario.total_descargas %></strong></td>
+                                </tr>
+                                <% }); %>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Canciones Más Populares -->
+            <div class="col-md-6">
+                <div class="stats-card">
+                    <h4><i class="fas fa-fire me-2"></i>Canciones Más Populares</h4>
+                    <div class="table-responsive">
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Canción</th>
+                                    <th>Artista</th>
+                                    <th>Descargas</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <% stats.rankings.cancionesMasDescargadas.forEach((cancion, index) => { %>
+                                <tr>
+                                    <td><span class="badge-custom"><%= index + 1 %></span></td>
+                                    <td><%= cancion.nombre %></td>
+                                    <td><%= cancion.artista %></td>
+                                    <td><strong><%= cancion.total_descargas %></strong></td>
+                                </tr>
+                                <% }); %>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Géneros y Artistas -->
+        <div class="row mb-4">
+            <!-- Géneros Más Populares -->
+            <div class="col-md-6">
+                <div class="stats-card">
+                    <h4><i class="fas fa-list me-2"></i>Géneros Más Populares</h4>
+                    <% stats.rankings.generosMasPopulares.forEach((genero, index) => { %>
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span><%= genero.genero %></span>
+                        <div class="d-flex align-items-center">
+                            <div class="progress-custom me-2" style="width: 100px;">
+                                <div class="progress-bar-custom" style="width: <%= (genero.total_descargas / stats.rankings.generosMasPopulares[0].total_descargas) * 100 %>%"></div>
+                            </div>
+                            <strong><%= genero.total_descargas %></strong>
+                        </div>
+                    </div>
+                    <% }); %>
+                </div>
+            </div>
+
+            <!-- Artistas Más Buscados -->
+            <div class="col-md-6">
+                <div class="stats-card">
+                    <h4><i class="fas fa-microphone me-2"></i>Artistas Más Buscados</h4>
+                    <% stats.rankings.artistasMasBuscados.forEach((artista, index) => { %>
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span><%= artista.artista %></span>
+                        <div class="d-flex align-items-center">
+                            <div class="progress-custom me-2" style="width: 100px;">
+                                <div class="progress-bar-custom" style="width: <%= (artista.total_descargas / stats.rankings.artistasMasBuscados[0].total_descargas) * 100 %>%"></div>
+                            </div>
+                            <strong><%= artista.total_descargas %></strong>
+                        </div>
+                    </div>
+                    <% }); %>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <script>
+        // Gráfico de actividad por horas
+        const ctx = document.getElementById('activityChart').getContext('2d');
+        const activityData = <%- JSON.stringify(stats.graficos.actividadPorHoras) %>;
+        
+        // Preparar datos para el gráfico
+        const hours = Array.from({length: 24}, (_, i) => i);
+        const activityByHour = hours.map(hour => {
+            const found = activityData.find(item => item.hora === hour);
+            return found ? found.actividad : 0;
+        });
+        
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: hours.map(h => h + ':00'),
+                datasets: [{
+                    label: 'Actividad',
+                    data: activityByHour,
+                    borderColor: 'rgb(102, 126, 234)',
+                    backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            stepSize: 1
+                        }
+                    }
+                }
+            }
+        });
+        
+        // Auto-refresh cada 30 segundos
+        setInterval(() => {
+            location.reload();
+        }, 30000);
+    </script>
+</body>
+</html>

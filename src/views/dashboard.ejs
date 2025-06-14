@@ -103,16 +103,28 @@
         <div class="row mb-4">
             <div class="col-md-6">
                 <div class="status-card <%= botStatus.isConnected ? 'status-connected' : 'status-disconnected' %>" id="statusCard">
-                    <h4>
-                        <i class="fas fa-circle me-2" id="statusIcon"></i>
-                        Estado de WhatsApp
-                    </h4>
-                    <p class="mb-0" id="statusText">
-                        <%= botStatus.isConnected ? 'Conectado' : 'Desconectado' %>
-                    </p>
-                    <% if (botStatus.lastConnection) { %>
-                        <small class="text-muted">Última conexión: <%= botStatus.lastConnection %></small>
-                    <% } %>
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h4>
+                                <i class="fas fa-circle me-2" id="statusIcon"></i>
+                                Estado de WhatsApp
+                            </h4>
+                            <p class="mb-0" id="statusText">
+                                <%= botStatus.isConnected ? 'Conectado' : 'Desconectado' %>
+                            </p>
+                            <% if (botStatus.lastConnection) { %>
+                                <small class="text-muted">Última conexión: <%= botStatus.lastConnection %></small>
+                            <% } %>
+                        </div>
+                        <div>
+                            <% if (botStatus.isConnected) { %>
+                                <button class="btn btn-warning btn-sm" id="logoutBtn" onclick="cerrarSesion()">
+                                    <i class="fas fa-sign-out-alt me-1"></i>
+                                    Cerrar Sesión
+                                </button>
+                            <% } %>
+                        </div>
+                    </div>
                 </div>
             </div>
             <div class="col-md-6">
@@ -123,6 +135,7 @@
                             <div class="qr-code">
                                 <img src="<%= botStatus.qrCode %>" alt="QR Code" class="img-fluid">
                             </div>
+                            <p class="mt-2 mb-0">Escanea con WhatsApp</p>
                         <% } else if (botStatus.isConnected) { %>
                             <div class="alert alert-success">
                                 <i class="fas fa-check-circle me-2"></i>
@@ -141,22 +154,62 @@
 
         <!-- Estadísticas -->
         <div class="row mb-4">
-            <div class="col-md-4">
-                <div class="stat-card users">
-                    <h3><%= botStatus.totalUsers %></h3>
-                    <p><i class="fas fa-users me-2"></i>Usuarios Registrados</p>
+            <div class="col-md-3">
+                <div class="stats-card bg-primary text-white">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h3><%= botStatus.totalUsers %></h3>
+                            <p><i class="fas fa-users me-2"></i>Usuarios Registrados</p>
+                        </div>
+                        <div class="stats-icon">
+                            <i class="fas fa-users fa-2x"></i>
+                        </div>
+                    </div>
                 </div>
             </div>
-            <div class="col-md-4">
-                <div class="stat-card songs">
-                    <h3><%= botStatus.totalSongs %></h3>
-                    <p><i class="fas fa-music me-2"></i>Canciones Disponibles</p>
+            <div class="col-md-3">
+                <div class="stats-card bg-success text-white">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h3><%= botStatus.totalSongs %></h3>
+                            <p><i class="fas fa-music me-2"></i>Canciones Disponibles</p>
+                        </div>
+                        <div class="stats-icon">
+                            <i class="fas fa-music fa-2x"></i>
+                        </div>
+                    </div>
                 </div>
             </div>
-            <div class="col-md-4">
-                <div class="stat-card downloads">
-                    <h3><%= botStatus.totalDownloads %></h3>
-                    <p><i class="fas fa-download me-2"></i>Descargas Totales</p>
+            <div class="col-md-3">
+                <div class="stats-card bg-warning text-white">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h3><%= botStatus.totalDownloads %></h3>
+                            <p><i class="fas fa-download me-2"></i>Descargas Totales</p>
+                        </div>
+                        <div class="stats-icon">
+                            <i class="fas fa-download fa-2x"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stats-card bg-info text-white">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h3>24/7</h3>
+                            <p><i class="fas fa-clock me-2"></i>Servicio Activo</p>
+                        </div>
+                        <div class="stats-icon">
+                            <i class="fas fa-server fa-2x"></i>
+                        </div>
+                    </div>
+                    <div class="mt-2">
+                        <a href="/dashboard/stats" class="btn btn-light btn-sm">
+                            <i class="fas fa-chart-bar me-1"></i>
+                            Ver Estadísticas Detalladas
+                        </a>
+                    </div>
                 </div>
             </div>
         </div>
@@ -208,9 +261,9 @@
                 }
                 
                 // Actualizar estadísticas
-                document.querySelector('.stat-card.users h3').textContent = status.totalUsers;
-                document.querySelector('.stat-card.songs h3').textContent = status.totalSongs;
-                document.querySelector('.stat-card.downloads h3').textContent = status.totalDownloads;
+                document.querySelector('.stats-card.bg-primary h3').textContent = status.totalUsers;
+                document.querySelector('.stats-card.bg-success h3').textContent = status.totalSongs;
+                document.querySelector('.stats-card.bg-warning h3').textContent = status.totalDownloads;
                 
                 // Actualizar timestamp
                 document.getElementById('lastUpdate').textContent = new Date(status.timestamp).toLocaleString();
@@ -279,6 +332,69 @@
         
         // Actualizar logs cada 10 segundos
         setInterval(updateLogs, 10000);
+        
+        // Función para cerrar sesión del bot
+        async function cerrarSesion() {
+            const logoutBtn = document.getElementById('logoutBtn');
+            
+            // Confirmar acción
+            if (!confirm('¿Estás seguro de que deseas cerrar la sesión de WhatsApp? Se generará un nuevo código QR.')) {
+                return;
+            }
+            
+            try {
+                // Deshabilitar botón y mostrar loading
+                logoutBtn.disabled = true;
+                logoutBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Cerrando...';
+                
+                // Llamar al endpoint de logout
+                const response = await fetch('/dashboard/api/logout', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    // Mostrar mensaje de éxito
+                    alert('Sesión cerrada correctamente. Se generará un nuevo código QR en breve.');
+                    
+                    // Actualizar interfaz inmediatamente
+                    const statusCard = document.getElementById('statusCard');
+                    const statusIcon = document.getElementById('statusIcon');
+                    const statusText = document.getElementById('statusText');
+                    
+                    statusCard.className = 'status-card status-disconnected';
+                    statusIcon.className = 'fas fa-circle me-2 text-danger';
+                    statusText.textContent = 'Desconectado';
+                    
+                    // Ocultar botón de logout
+                    logoutBtn.style.display = 'none';
+                    
+                    // Mostrar mensaje de espera en QR
+                    const qrDisplay = document.getElementById('qrCodeDisplay');
+                    qrDisplay.innerHTML = `
+                        <div class="alert alert-info">
+                            <i class="fas fa-sync fa-spin me-2"></i>
+                            Generando nuevo código QR...
+                        </div>
+                    `;
+                    
+                } else {
+                    alert('Error al cerrar sesión: ' + result.error);
+                    logoutBtn.disabled = false;
+                    logoutBtn.innerHTML = '<i class="fas fa-sign-out-alt me-1"></i>Cerrar Sesión';
+                }
+                
+            } catch (error) {
+                console.error('Error cerrando sesión:', error);
+                alert('Error de conexión al cerrar sesión');
+                logoutBtn.disabled = false;
+                logoutBtn.innerHTML = '<i class="fas fa-sign-out-alt me-1"></i>Cerrar Sesión';
+            }
+        }
     </script>
 </body>
 </html>
