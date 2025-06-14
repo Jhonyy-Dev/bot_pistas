@@ -26,6 +26,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // Importar rutas del dashboard
 const { router: dashboardRouter } = require('./routes/dashboard');
+app.use('/', dashboardRouter);
 app.use('/dashboard', dashboardRouter);
 
 // Ruta principal - redirigir al dashboard

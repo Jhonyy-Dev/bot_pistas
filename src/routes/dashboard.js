@@ -76,9 +76,9 @@ router.get('/api/dashboard-data', async (req, res) => {
     let lastConnection = null;
     
     try {
-      connected = whatsappServiceRef.isConnected();
-      qrCode = whatsappServiceRef.getQR();
-      lastConnection = whatsappServiceRef.getLastConnection();
+      connected = whatsappServiceRef.isConnected;
+      qrCode = whatsappServiceRef.qrCode;
+      lastConnection = whatsappServiceRef.lastConnection || botStatus.lastConnection;
       
       // Log para debugging
       logger.debug(`Dashboard data - Connected: ${connected}, QR available: ${qrCode ? 'Yes' : 'No'}`);

@@ -512,7 +512,7 @@
             `;
 
             try {
-                const response = await fetch('/api/logout', {
+                const response = await fetch('/dashboard/api/logout', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -582,7 +582,7 @@
                 `;
                 
                 // Llamar al endpoint de reinicio de QR
-                const response = await fetch('/api/reset-qr', {
+                const response = await fetch('/dashboard/api/reset-qr', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -663,7 +663,7 @@
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 segundos timeout
                 
-                const response = await fetch('/api/dashboard-data', {
+                const response = await fetch('/dashboard/api/dashboard-data', {
                     signal: controller.signal,
                     cache: 'no-store', // Evitar caché para siempre obtener datos frescos
                     headers: {
