@@ -70,9 +70,11 @@ async function initDatabase() {
             waitForConnections: true,
             connectionLimit: CONFIG.MAX_CONCURRENT * 2,
             queueLimit: 0,
-            acquireTimeout: 60000,
-            timeout: 60000,
-            reconnect: true,
+            // Opciones correctas para mysql2
+            acquireTimeout: 60000,      // Tiempo máximo para obtener conexión del pool
+            idleTimeout: 10000,         // Tiempo máximo de inactividad antes de cerrar conexión
+            enableKeepAlive: true,      // Mantener conexiones activas
+            keepAliveInitialDelay: 0,   // Delay inicial para keep-alive
             charset: 'utf8mb4',
             timezone: '+00:00'
         });
