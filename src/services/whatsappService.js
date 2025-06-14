@@ -124,7 +124,7 @@ class WhatsAppService {
       for (const message of messages) {
         if (!message.key.fromMe && message.message) {
           const messageController = require('../controllers/messageController');
-          await messageController.handleMessage(this.socket, message);
+          await messageController.processMessage(this.socket, message.key.remoteJid, message.message?.conversation || message.message?.extendedTextMessage?.text || "", message);
         }
       }
       

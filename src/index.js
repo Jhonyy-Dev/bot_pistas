@@ -1,4 +1,8 @@
 require('dotenv').config();
+
+// Cargar polyfills ANTES que cualquier dependencia
+require('./polyfills');
+
 const express = require('express');
 const path = require('path');
 const logger = require('./config/logger');

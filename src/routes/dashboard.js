@@ -38,31 +38,36 @@ function setWhatsAppServiceRef(service) {
   whatsappServiceRef = service;
 }
 
-/**
- * Página principal del dashboard
- */
+// Endpoint principal del dashboard
 router.get('/', async (req, res) => {
-  try {
-    // Obtener estadísticas actualizadas
-    const [totalUsers, totalSongs, totalDownloads] = await Promise.all([
-      Usuario.count(),
-      Cancion.count(),
-      TransaccionCredito.count({ where: { tipo: 'descarga' } })
-    ]);
+    try {
+        res.render('dashboard');
+    } catch (error) {
+        logger.error('Error renderizando dashboard:', error);
+        res.status(500).json({ error: 'Error interno del servidor' });
+    }
+});
 
-    botStatus.totalUsers = totalUsers;
-    botStatus.totalSongs = totalSongs;
-    botStatus.totalDownloads = totalDownloads;
-
-    res.render('dashboard', { 
-      title: 'BOT_PISTAS Dashboard',
-      botStatus,
-      timestamp: new Date().toLocaleString()
-    });
-  } catch (error) {
-    logger.error(`Error en dashboard: ${error.message}`);
-    res.status(500).render('error', { error: 'Error interno del servidor' });
-  }
+// Endpoint para obtener datos del dashboard
+router.get('/api/dashboard-data', async (req, res) => {
+    try {
+        const stats = await obtenerEstadisticasCompletas();
+        
+        res.json({
+            connected: botStatus.isConnected,
+            qrCode: botStatus.qrCode,
+            lastConnection: botStatus.lastConnection,
+            stats: {
+                users: stats.totalUsuarios || 0,
+                songs: stats.totalCanciones || 0,
+                downloads: stats.totalDescargas || 0
+            },
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        logger.error('Error obteniendo datos del dashboard:', error);
+        res.status(500).json({ error: 'Error obteniendo datos' });
+    }
 });
 
 /**
@@ -93,63 +98,73 @@ router.get('/api/status', async (req, res) => {
 });
 
 /**
- * API para cerrar sesión del bot y generar nuevo QR
+ * API para cerrar sesión de WhatsApp y limpiar archivos de sesión
  */
 router.post('/api/logout', async (req, res) => {
   try {
-    logger.info('Iniciando cierre de sesión del bot...');
+    logger.info('Iniciando proceso de logout de WhatsApp...');
     
-    // 1. Cerrar conexión actual si existe
-    if (whatsappServiceRef && whatsappServiceRef.socket) {
-      try {
-        await whatsappServiceRef.socket.logout();
-        logger.info('Sesión de WhatsApp cerrada correctamente');
-      } catch (logoutError) {
-        logger.warn(`Error al cerrar sesión: ${logoutError.message}`);
-      }
+    // Verificar que tenemos referencia al servicio de WhatsApp
+    if (!whatsappServiceRef) {
+      logger.error('No hay referencia al servicio de WhatsApp');
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Servicio de WhatsApp no disponible' 
+      });
     }
 
-    // 2. Borrar archivos de sesión
-    const sessionDir = path.resolve(process.env.SESSION_FOLDER || './sessions');
-    
-    if (await fs.pathExists(sessionDir)) {
-      try {
-        await fs.emptyDir(sessionDir);
-        logger.info('Archivos de sesión eliminados correctamente');
-      } catch (deleteError) {
-        logger.error(`Error eliminando archivos de sesión: ${deleteError.message}`);
-      }
+    // Cerrar sesión de WhatsApp
+    try {
+      await whatsappServiceRef.logout();
+      logger.info('Sesión de WhatsApp cerrada correctamente');
+    } catch (logoutError) {
+      logger.warn('Error al cerrar sesión de WhatsApp:', logoutError.message);
+      // Continuar con la limpieza de archivos aunque falle el logout
     }
 
-    // 3. Actualizar estado del bot
+    // Limpiar archivos de sesión
+    const sessionFolder = process.env.SESSION_FOLDER || './sessions';
+    const fs = require('fs-extra');
+    
+    try {
+      await fs.emptyDir(sessionFolder);
+      logger.info(`Archivos de sesión eliminados de: ${sessionFolder}`);
+    } catch (cleanupError) {
+      logger.error('Error limpiando archivos de sesión:', cleanupError.message);
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Error limpiando archivos de sesión' 
+      });
+    }
+
+    // Actualizar estado del bot
     updateBotStatus({
       isConnected: false,
       qrCode: null,
       lastConnection: new Date().toLocaleString()
     });
 
-    // 4. Reinicializar servicio de WhatsApp después de un breve delay
+    // Reinicializar servicio WhatsApp después de un breve delay
     setTimeout(async () => {
-      if (whatsappServiceRef) {
-        try {
-          logger.info('Reinicializando servicio de WhatsApp...');
-          await whatsappServiceRef.initialize();
-        } catch (reinitError) {
-          logger.error(`Error reinicializando WhatsApp: ${reinitError.message}`);
-        }
+      try {
+        logger.info('Reinicializando servicio de WhatsApp...');
+        await whatsappServiceRef.initialize();
+        logger.info('Servicio de WhatsApp reinicializado correctamente');
+      } catch (reinitError) {
+        logger.error('Error reinicializando WhatsApp:', reinitError.message);
       }
     }, 2000);
 
     res.json({ 
       success: true, 
-      message: 'Sesión cerrada correctamente. Nuevo QR se generará en breve.' 
+      message: 'Sesión cerrada y archivos limpiados correctamente' 
     });
 
   } catch (error) {
-    logger.error(`Error en logout: ${error.message}`);
+    logger.error('Error en proceso de logout:', error.message);
     res.status(500).json({ 
       success: false, 
-      error: 'Error interno del servidor' 
+      message: 'Error interno del servidor' 
     });
   }
 });

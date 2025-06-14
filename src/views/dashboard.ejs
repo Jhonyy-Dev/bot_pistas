@@ -3,227 +3,365 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><%= title %></title>
+    <title>BOT_PISTAS Dashboard</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <style>
-        .qr-container {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-radius: 15px;
-            padding: 20px;
-            text-align: center;
-            color: white;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+        :root {
+            --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            --success-gradient: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            --warning-gradient: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            --info-gradient: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            --dark-bg: #1a1d29;
+            --card-bg: #2d3748;
+            --text-light: #e2e8f0;
         }
-        .status-card {
-            background: white;
-            border-radius: 15px;
-            padding: 20px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
-            border-left: 4px solid #28a745;
+
+        body {
+            background: var(--dark-bg);
+            color: var(--text-light);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            min-height: 100vh;
         }
-        .status-disconnected {
-            border-left-color: #dc3545;
+
+        .navbar {
+            background: var(--primary-gradient) !important;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
         }
-        .status-connected {
-            border-left-color: #28a745;
-        }
-        .stat-card {
-            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-            color: white;
-            border-radius: 15px;
-            padding: 20px;
-            text-align: center;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
-        }
-        .stat-card.users {
-            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-        }
-        .stat-card.songs {
-            background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
-        }
-        .stat-card.downloads {
-            background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
-        }
-        .qr-code {
-            max-width: 300px;
-            margin: 0 auto;
-            background: white;
-            padding: 20px;
-            border-radius: 10px;
-        }
-        .pulse {
-            animation: pulse 2s infinite;
-        }
-        @keyframes pulse {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.05); }
-            100% { transform: scale(1); }
-        }
+
         .navbar-brand {
             font-weight: bold;
             font-size: 1.5rem;
         }
-        .log-container {
-            background: #f8f9fa;
+
+        .main-container {
+            padding: 2rem 0;
+        }
+
+        .dashboard-header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        .dashboard-title {
+            background: var(--primary-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            font-size: 2.5rem;
+            font-weight: bold;
+            margin-bottom: 0.5rem;
+        }
+
+        .dashboard-subtitle {
+            color: #94a3b8;
+            font-size: 1.1rem;
+        }
+
+        .status-card, .qr-card, .stats-card {
+            background: var(--card-bg);
+            border-radius: 15px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+        }
+
+        .status-connected { background-color: #10b981; }
+        .status-disconnected { background-color: #ef4444; }
+        .status-connecting { background-color: #f59e0b; }
+
+        .qr-container {
+            text-align: center;
+            padding: 2rem;
+            background: rgba(255,255,255,0.05);
             border-radius: 10px;
-            padding: 15px;
-            max-height: 300px;
+            margin: 1rem 0;
+        }
+
+        .qr-image {
+            max-width: 280px;
+            width: 100%;
+            border-radius: 10px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+        }
+
+        .stat-card {
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 1.5rem;
+            text-align: center;
+            border: 1px solid rgba(255,255,255,0.1);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 12px 40px rgba(0,0,0,0.4);
+        }
+
+        .stat-number {
+            font-size: 2.5rem;
+            font-weight: bold;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-label {
+            color: #94a3b8;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .stat-icon {
+            font-size: 2rem;
+            margin-bottom: 1rem;
+            opacity: 0.8;
+        }
+
+        .users-stat { color: #3b82f6; }
+        .songs-stat { color: #10b981; }
+        .downloads-stat { color: #f59e0b; }
+        .uptime-stat { color: #8b5cf6; }
+
+        .btn-logout {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+            border: none;
+            border-radius: 8px;
+            padding: 0.75rem 1.5rem;
+            color: white;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        .btn-logout:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(239, 68, 68, 0.4);
+            color: white;
+        }
+
+        .btn-stats {
+            background: var(--info-gradient);
+            border: none;
+            border-radius: 8px;
+            padding: 0.75rem 1.5rem;
+            color: white;
+            font-weight: 600;
+            text-decoration: none;
+            display: inline-block;
+            transition: all 0.3s ease;
+        }
+
+        .btn-stats:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(79, 172, 254, 0.4);
+            color: white;
+            text-decoration: none;
+        }
+
+        .logs-container {
+            background: var(--card-bg);
+            border-radius: 15px;
+            padding: 1.5rem;
+            margin-top: 2rem;
+            border: 1px solid rgba(255,255,255,0.1);
+            max-height: 400px;
             overflow-y: auto;
+        }
+
+        .log-entry {
+            padding: 0.5rem 0.75rem;
+            margin: 0.25rem 0;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+        }
+
+        .log-info { background-color: rgba(59, 130, 246, 0.1); color: #93c5fd; }
+        .log-error { background-color: rgba(239, 68, 68, 0.1); color: #fca5a5; }
+        .log-warn { background-color: rgba(245, 158, 11, 0.1); color: #fcd34d; }
+
+        .loading-spinner {
+            border: 3px solid rgba(255,255,255,0.1);
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .alert-custom {
+            border-radius: 10px;
+            border: none;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+
+        .section-title {
+            font-size: 1.3rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            margin-top: 1.5rem;
+        }
+
+        @media (max-width: 768px) {
+            .dashboard-title { font-size: 2rem; }
+            .stat-number { font-size: 2rem; }
+            .action-buttons { flex-direction: column; }
         }
     </style>
 </head>
-<body class="bg-light">
+<body>
     <!-- Navbar -->
-    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+    <nav class="navbar navbar-expand-lg navbar-dark">
         <div class="container">
-            <a class="navbar-brand" href="/">
+            <a class="navbar-brand" href="#">
                 <i class="fas fa-music me-2"></i>BOT_PISTAS Dashboard
             </a>
             <div class="navbar-nav ms-auto">
-                <a class="nav-link" href="/dashboard/stats">
-                    <i class="fas fa-chart-bar me-1"></i>Estadísticas
+                <a class="btn btn-stats" href="/dashboard/stats">
+                    <i class="fas fa-chart-bar me-2"></i>Estadísticas Detalladas
                 </a>
             </div>
         </div>
     </nav>
 
-    <div class="container mt-4">
+    <div class="container main-container">
         <!-- Header -->
-        <div class="row mb-4">
-            <div class="col-12">
-                <h1 class="display-6 text-center">
-                    <i class="fas fa-robot me-2"></i>Panel de Control BOT_PISTAS
-                </h1>
-                <p class="text-center text-muted">Monitoreo en tiempo real • Última actualización: <span id="lastUpdate"><%= timestamp %></span></p>
-            </div>
+        <div class="dashboard-header">
+            <h1 class="dashboard-title">
+                <i class="fas fa-robot me-3"></i>Panel de Control BOT_PISTAS
+            </h1>
+            <p class="dashboard-subtitle">
+                Monitoreo en tiempo real • Última actualización: <span id="lastUpdate"></span>
+            </p>
         </div>
 
-        <!-- Estado de Conexión y QR -->
-        <div class="row mb-4">
-            <div class="col-md-6">
-                <div class="status-card <%= botStatus.isConnected ? 'status-connected' : 'status-disconnected' %>" id="statusCard">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div>
-                            <h4>
-                                <i class="fas fa-circle me-2" id="statusIcon"></i>
-                                Estado de WhatsApp
-                            </h4>
-                            <p class="mb-0" id="statusText">
-                                <%= botStatus.isConnected ? 'Conectado' : 'Desconectado' %>
-                            </p>
-                            <% if (botStatus.lastConnection) { %>
-                                <small class="text-muted">Última conexión: <%= botStatus.lastConnection %></small>
-                            <% } %>
-                        </div>
-                        <div>
-                            <% if (botStatus.isConnected) { %>
-                                <button class="btn btn-warning btn-sm" id="logoutBtn" onclick="cerrarSesion()">
-                                    <i class="fas fa-sign-out-alt me-1"></i>
-                                    Cerrar Sesión
-                                </button>
-                            <% } %>
-                        </div>
+        <div class="row">
+            <!-- Estado de WhatsApp -->
+            <div class="col-lg-6 col-md-12">
+                <div class="status-card">
+                    <h5 class="section-title">
+                        <i class="fab fa-whatsapp"></i>Estado de WhatsApp
+                    </h5>
+                    <div class="d-flex align-items-center mb-3">
+                        <span class="status-indicator" id="statusIndicator"></span>
+                        <span id="connectionStatus" class="fw-bold fs-5">Cargando...</span>
+                    </div>
+                    <p class="text-muted mb-0">
+                        <small>Última conexión: <span id="lastConnection">--</span></small>
+                    </p>
+                    
+                    <!-- Botón de Cerrar Sesión (solo visible cuando está conectado) -->
+                    <div id="logoutButtonContainer" class="mt-3" style="display: none;">
+                        <button class="btn btn-logout" onclick="cerrarSesion()">
+                            <i class="fas fa-sign-out-alt me-2"></i>Cerrar Sesión y Generar Nuevo QR
+                        </button>
                     </div>
                 </div>
             </div>
-            <div class="col-md-6">
-                <div class="qr-container" id="qrContainer">
-                    <h4><i class="fas fa-qrcode me-2"></i>Código QR</h4>
-                    <div id="qrCodeDisplay">
-                        <% if (botStatus.qrCode) { %>
-                            <div class="qr-code">
-                                <img src="<%= botStatus.qrCode %>" alt="QR Code" class="img-fluid">
-                            </div>
-                            <p class="mt-2 mb-0">Escanea con WhatsApp</p>
-                        <% } else if (botStatus.isConnected) { %>
-                            <div class="alert alert-success">
-                                <i class="fas fa-check-circle me-2"></i>
-                                ¡WhatsApp conectado exitosamente!
-                            </div>
-                        <% } else { %>
-                            <div class="alert alert-warning">
-                                <i class="fas fa-clock me-2"></i>
-                                Esperando código QR...
-                            </div>
-                        <% } %>
+
+            <!-- Código QR -->
+            <div class="col-lg-6 col-md-12">
+                <div class="qr-card">
+                    <h5 class="section-title">
+                        <i class="fas fa-qrcode"></i>Código QR
+                    </h5>
+                    <div class="qr-container" id="qrContainer">
+                        <div class="loading-spinner"></div>
+                        <p class="mt-3 text-muted">Esperando código QR...</p>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- Estadísticas -->
-        <div class="row mb-4">
-            <div class="col-md-3">
-                <div class="stats-card bg-primary text-white">
-                    <div class="d-flex justify-content-between">
-                        <div>
-                            <h3><%= botStatus.totalUsers %></h3>
-                            <p><i class="fas fa-users me-2"></i>Usuarios Registrados</p>
-                        </div>
-                        <div class="stats-icon">
-                            <i class="fas fa-users fa-2x"></i>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="stats-card bg-success text-white">
-                    <div class="d-flex justify-content-between">
-                        <div>
-                            <h3><%= botStatus.totalSongs %></h3>
-                            <p><i class="fas fa-music me-2"></i>Canciones Disponibles</p>
-                        </div>
-                        <div class="stats-icon">
-                            <i class="fas fa-music fa-2x"></i>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="stats-card bg-warning text-white">
-                    <div class="d-flex justify-content-between">
-                        <div>
-                            <h3><%= botStatus.totalDownloads %></h3>
-                            <p><i class="fas fa-download me-2"></i>Descargas Totales</p>
-                        </div>
-                        <div class="stats-icon">
-                            <i class="fas fa-download fa-2x"></i>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="stats-card bg-info text-white">
-                    <div class="d-flex justify-content-between">
-                        <div>
-                            <h3>24/7</h3>
-                            <p><i class="fas fa-clock me-2"></i>Servicio Activo</p>
-                        </div>
-                        <div class="stats-icon">
-                            <i class="fas fa-server fa-2x"></i>
-                        </div>
-                    </div>
-                    <div class="mt-2">
-                        <a href="/dashboard/stats" class="btn btn-light btn-sm">
-                            <i class="fas fa-chart-bar me-1"></i>
-                            Ver Estadísticas Detalladas
-                        </a>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Logs en Tiempo Real -->
+        <!-- Estadísticas Principales -->
         <div class="row">
             <div class="col-12">
-                <div class="card">
-                    <div class="card-header">
-                        <h5><i class="fas fa-terminal me-2"></i>Logs del Sistema</h5>
+                <div class="stats-card">
+                    <h5 class="section-title">
+                        <i class="fas fa-chart-line"></i>Estadísticas del Bot
+                    </h5>
+                    <div class="row">
+                        <div class="col-lg-3 col-md-6 mb-3">
+                            <div class="stat-card">
+                                <div class="stat-icon users-stat">
+                                    <i class="fas fa-users"></i>
+                                </div>
+                                <div class="stat-number users-stat" id="totalUsers">0</div>
+                                <div class="stat-label">Usuarios Registrados</div>
+                            </div>
+                        </div>
+                        <div class="col-lg-3 col-md-6 mb-3">
+                            <div class="stat-card">
+                                <div class="stat-icon songs-stat">
+                                    <i class="fas fa-music"></i>
+                                </div>
+                                <div class="stat-number songs-stat" id="totalSongs">0</div>
+                                <div class="stat-label">Canciones Disponibles</div>
+                            </div>
+                        </div>
+                        <div class="col-lg-3 col-md-6 mb-3">
+                            <div class="stat-card">
+                                <div class="stat-icon downloads-stat">
+                                    <i class="fas fa-download"></i>
+                                </div>
+                                <div class="stat-number downloads-stat" id="totalDownloads">0</div>
+                                <div class="stat-label">Descargas Totales</div>
+                            </div>
+                        </div>
+                        <div class="col-lg-3 col-md-6 mb-3">
+                            <div class="stat-card">
+                                <div class="stat-icon uptime-stat">
+                                    <i class="fas fa-clock"></i>
+                                </div>
+                                <div class="stat-number uptime-stat">24/7</div>
+                                <div class="stat-label">Servicio Activo</div>
+                            </div>
+                        </div>
                     </div>
-                    <div class="card-body">
-                        <div class="log-container" id="logContainer">
-                            <div class="text-muted">Cargando logs...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Logs del Sistema -->
+        <div class="row">
+            <div class="col-12">
+                <div class="logs-container">
+                    <h5 class="section-title">
+                        <i class="fas fa-terminal"></i>Logs del Sistema
+                    </h5>
+                    <div id="logsContainer">
+                        <div class="log-entry log-info">
+                            <span class="text-muted">3:54:42 p.m.</span> Bot iniciado correctamente
+                        </div>
+                        <div class="log-entry log-info">
+                            <span class="text-muted">3:54:42 p.m.</span> 0 usuarios registrados
+                        </div>
+                        <div class="log-entry log-info">
+                            <span class="text-muted">3:54:42 p.m.</span> 0 canciones disponibles
                         </div>
                     </div>
                 </div>
@@ -231,170 +369,185 @@
         </div>
     </div>
 
+    <!-- Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // Actualización automática cada 5 segundos
-        setInterval(updateStatus, 5000);
-        
-        // Actualización inicial
-        updateStatus();
-        updateLogs();
-
-        async function updateStatus() {
-            try {
-                const response = await fetch('/dashboard/api/status');
-                const status = await response.json();
-                
-                // Actualizar estado de conexión
-                const statusCard = document.getElementById('statusCard');
-                const statusIcon = document.getElementById('statusIcon');
-                const statusText = document.getElementById('statusText');
-                
-                if (status.isConnected) {
-                    statusCard.className = 'status-card status-connected';
-                    statusIcon.className = 'fas fa-circle me-2 text-success';
-                    statusText.textContent = 'Conectado';
-                } else {
-                    statusCard.className = 'status-card status-disconnected';
-                    statusIcon.className = 'fas fa-circle me-2 text-danger';
-                    statusText.textContent = 'Desconectado';
-                }
-                
-                // Actualizar estadísticas
-                document.querySelector('.stats-card.bg-primary h3').textContent = status.totalUsers;
-                document.querySelector('.stats-card.bg-success h3').textContent = status.totalSongs;
-                document.querySelector('.stats-card.bg-warning h3').textContent = status.totalDownloads;
-                
-                // Actualizar timestamp
-                document.getElementById('lastUpdate').textContent = new Date(status.timestamp).toLocaleString();
-                
-            } catch (error) {
-                console.error('Error actualizando estado:', error);
+        let dashboardState = {
+            connected: false,
+            qrCode: null,
+            stats: {
+                users: 0,
+                songs: 0,
+                downloads: 0
             }
+        };
+
+        // Actualizar timestamp
+        function updateTimestamp() {
+            const now = new Date();
+            document.getElementById('lastUpdate').textContent = now.toLocaleString('es-ES');
         }
 
-        async function updateQR() {
-            try {
-                const response = await fetch('/dashboard/api/qr');
-                const data = await response.json();
-                
-                const qrDisplay = document.getElementById('qrCodeDisplay');
-                
-                if (data.qrCode && !data.isConnected) {
-                    qrDisplay.innerHTML = `
-                        <div class="qr-code pulse">
-                            <img src="${data.qrCode}" alt="QR Code" class="img-fluid">
-                        </div>
-                        <p class="mt-2">Escanea con WhatsApp</p>
-                    `;
-                } else if (data.isConnected) {
-                    qrDisplay.innerHTML = `
-                        <div class="alert alert-success">
-                            <i class="fas fa-check-circle me-2"></i>
-                            ¡WhatsApp conectado exitosamente!
-                        </div>
-                    `;
-                } else {
-                    qrDisplay.innerHTML = `
-                        <div class="alert alert-warning">
-                            <i class="fas fa-clock me-2"></i>
-                            Esperando código QR...
-                        </div>
-                    `;
-                }
-            } catch (error) {
-                console.error('Error actualizando QR:', error);
-            }
-        }
-
-        async function updateLogs() {
-            try {
-                const response = await fetch('/dashboard/api/logs');
-                const logs = await response.json();
-                
-                const logContainer = document.getElementById('logContainer');
-                logContainer.innerHTML = logs.map(log => `
-                    <div class="mb-1">
-                        <span class="badge bg-${log.level === 'error' ? 'danger' : 'primary'}">${log.level}</span>
-                        <small class="text-muted">${new Date(log.timestamp).toLocaleTimeString()}</small>
-                        ${log.message}
-                    </div>
-                `).join('');
-                
-            } catch (error) {
-                console.error('Error actualizando logs:', error);
-            }
-        }
-
-        // Actualizar QR cada 3 segundos
-        setInterval(updateQR, 3000);
-        updateQR();
-        
-        // Actualizar logs cada 10 segundos
-        setInterval(updateLogs, 10000);
-        
-        // Función para cerrar sesión del bot
-        async function cerrarSesion() {
-            const logoutBtn = document.getElementById('logoutBtn');
+        // Actualizar estado de conexión
+        function updateConnectionStatus(connected, lastConnection = null) {
+            const statusElement = document.getElementById('connectionStatus');
+            const indicatorElement = document.getElementById('statusIndicator');
+            const logoutContainer = document.getElementById('logoutButtonContainer');
             
-            // Confirmar acción
-            if (!confirm('¿Estás seguro de que deseas cerrar la sesión de WhatsApp? Se generará un nuevo código QR.')) {
+            if (connected) {
+                statusElement.textContent = 'Conectado';
+                statusElement.className = 'fw-bold fs-5 text-success';
+                indicatorElement.className = 'status-indicator status-connected';
+                logoutContainer.style.display = 'block';
+            } else {
+                statusElement.textContent = 'Desconectado';
+                statusElement.className = 'fw-bold fs-5 text-danger';
+                indicatorElement.className = 'status-indicator status-disconnected';
+                logoutContainer.style.display = 'none';
+            }
+            
+            if (lastConnection) {
+                document.getElementById('lastConnection').textContent = lastConnection;
+            }
+            
+            dashboardState.connected = connected;
+        }
+
+        // Actualizar código QR
+        function updateQRCode(qrData) {
+            const qrContainer = document.getElementById('qrContainer');
+            
+            if (qrData) {
+                qrContainer.innerHTML = `
+                    <img src="${qrData}" alt="Código QR WhatsApp" class="qr-image">
+                    <p class="mt-3 text-info">
+                        <i class="fas fa-mobile-alt me-2"></i>Escanea este código con WhatsApp
+                    </p>
+                `;
+            } else if (dashboardState.connected) {
+                qrContainer.innerHTML = `
+                    <div class="text-success">
+                        <i class="fas fa-check-circle" style="font-size: 4rem; margin-bottom: 1rem;"></i>
+                        <h4>WhatsApp Conectado</h4>
+                        <p class="text-muted">El bot está funcionando correctamente</p>
+                    </div>
+                `;
+            } else {
+                qrContainer.innerHTML = `
+                    <div class="loading-spinner"></div>
+                    <p class="mt-3 text-muted">Esperando código QR...</p>
+                `;
+            }
+        }
+
+        // Actualizar estadísticas
+        function updateStats(stats) {
+            if (stats.users !== undefined) {
+                document.getElementById('totalUsers').textContent = stats.users;
+                dashboardState.stats.users = stats.users;
+            }
+            if (stats.songs !== undefined) {
+                document.getElementById('totalSongs').textContent = stats.songs;
+                dashboardState.stats.songs = stats.songs;
+            }
+            if (stats.downloads !== undefined) {
+                document.getElementById('totalDownloads').textContent = stats.downloads;
+                dashboardState.stats.downloads = stats.downloads;
+            }
+        }
+
+        // Función para cerrar sesión
+        async function cerrarSesion() {
+            if (!confirm('¿Estás seguro de que quieres cerrar la sesión de WhatsApp? Esto borrará todos los archivos de sesión y generará un nuevo código QR.')) {
                 return;
             }
+
+            const logoutContainer = document.getElementById('logoutButtonContainer');
+            const originalContent = logoutContainer.innerHTML;
             
+            // Mostrar loading
+            logoutContainer.innerHTML = `
+                <button class="btn btn-logout" disabled>
+                    <div class="loading-spinner" style="width: 20px; height: 20px; display: inline-block; margin-right: 8px;"></div>
+                    Cerrando sesión...
+                </button>
+            `;
+
             try {
-                // Deshabilitar botón y mostrar loading
-                logoutBtn.disabled = true;
-                logoutBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Cerrando...';
-                
-                // Llamar al endpoint de logout
-                const response = await fetch('/dashboard/api/logout', {
+                const response = await fetch('/api/logout', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     }
                 });
-                
+
                 const result = await response.json();
-                
+
                 if (result.success) {
+                    // Actualizar estado inmediatamente
+                    updateConnectionStatus(false);
+                    updateQRCode(null);
+                    
                     // Mostrar mensaje de éxito
-                    alert('Sesión cerrada correctamente. Se generará un nuevo código QR en breve.');
+                    showAlert('Sesión cerrada correctamente. Generando nuevo código QR...', 'success');
                     
-                    // Actualizar interfaz inmediatamente
-                    const statusCard = document.getElementById('statusCard');
-                    const statusIcon = document.getElementById('statusIcon');
-                    const statusText = document.getElementById('statusText');
-                    
-                    statusCard.className = 'status-card status-disconnected';
-                    statusIcon.className = 'fas fa-circle me-2 text-danger';
-                    statusText.textContent = 'Desconectado';
-                    
-                    // Ocultar botón de logout
-                    logoutBtn.style.display = 'none';
-                    
-                    // Mostrar mensaje de espera en QR
-                    const qrDisplay = document.getElementById('qrCodeDisplay');
-                    qrDisplay.innerHTML = `
-                        <div class="alert alert-info">
-                            <i class="fas fa-sync fa-spin me-2"></i>
-                            Generando nuevo código QR...
-                        </div>
-                    `;
-                    
+                    // Actualizar dashboard después de un breve delay
+                    setTimeout(() => {
+                        fetchDashboardData();
+                    }, 2000);
                 } else {
-                    alert('Error al cerrar sesión: ' + result.error);
-                    logoutBtn.disabled = false;
-                    logoutBtn.innerHTML = '<i class="fas fa-sign-out-alt me-1"></i>Cerrar Sesión';
+                    throw new Error(result.message || 'Error al cerrar sesión');
                 }
-                
             } catch (error) {
-                console.error('Error cerrando sesión:', error);
-                alert('Error de conexión al cerrar sesión');
-                logoutBtn.disabled = false;
-                logoutBtn.innerHTML = '<i class="fas fa-sign-out-alt me-1"></i>Cerrar Sesión';
+                console.error('Error al cerrar sesión:', error);
+                showAlert('Error al cerrar sesión: ' + error.message, 'danger');
+                logoutContainer.innerHTML = originalContent;
             }
         }
+
+        // Mostrar alertas
+        function showAlert(message, type) {
+            const alertContainer = document.createElement('div');
+            alertContainer.className = `alert alert-${type} alert-custom alert-dismissible fade show`;
+            alertContainer.innerHTML = `
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            
+            document.querySelector('.main-container').insertBefore(alertContainer, document.querySelector('.main-container').firstChild);
+            
+            // Auto-dismiss después de 5 segundos
+            setTimeout(() => {
+                if (alertContainer.parentNode) {
+                    alertContainer.remove();
+                }
+            }, 5000);
+        }
+
+        // Obtener datos del dashboard
+        async function fetchDashboardData() {
+            try {
+                const response = await fetch('/api/dashboard-data');
+                const data = await response.json();
+                
+                updateConnectionStatus(data.connected, data.lastConnection);
+                updateQRCode(data.qrCode);
+                updateStats(data.stats);
+                updateTimestamp();
+            } catch (error) {
+                console.error('Error fetching dashboard data:', error);
+            }
+        }
+
+        // Inicializar dashboard
+        document.addEventListener('DOMContentLoaded', function() {
+            updateTimestamp();
+            fetchDashboardData();
+            
+            // Actualizar cada 5 segundos
+            setInterval(fetchDashboardData, 5000);
+            setInterval(updateTimestamp, 1000);
+        });
     </script>
 </body>
 </html>
