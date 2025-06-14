@@ -144,13 +144,35 @@ class WhatsAppService {
       
       for (const message of messages) {
         if (!message.key.fromMe && message.message) {
-          const messageController = require('../controllers/messageController');
-          await messageController.processMessage(this.socket, message.key.remoteJid, message.message?.conversation || message.message?.extendedTextMessage?.text || "", message);
+          try {
+            const messageController = require('../controllers/messageController');
+            
+            // Obtener el texto del mensaje de las diferentes posibles ubicaciones
+            const messageText = message.message?.conversation || 
+                              message.message?.extendedTextMessage?.text || 
+                              message.message?.buttonsResponseMessage?.selectedButtonId || 
+                              message.message?.listResponseMessage?.singleSelectReply?.selectedRowId || 
+                              "";
+            
+            // Llamar a processMessage con los parámetros correctos según su firma
+            // processMessage(socket, sender, message, rawMessage)
+            await messageController.processMessage(
+              this.socket,           // socket
+              message.key.remoteJid, // sender (JID del remitente)
+              messageText,          // message (texto del mensaje)
+              message               // rawMessage (mensaje completo)
+            );
+            
+            logger.debug(`Mensaje procesado correctamente: ${messageText.substring(0, 30)}${messageText.length > 30 ? '...' : ''}`);
+          } catch (msgError) {
+            logger.error(`Error procesando mensaje individual: ${msgError.message}`);
+            logger.debug(`Detalles del mensaje con error: ${JSON.stringify(message.key)}`);
+          }
         }
       }
-      
     } catch (error) {
-      logger.error(`Error procesando mensajes: ${error.message}`);
+      logger.error(`Error general procesando mensajes: ${error.message}`);
+      logger.debug(`Stack trace: ${error.stack}`);
     }
   }
 

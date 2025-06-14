@@ -443,6 +443,30 @@
             dashboardState.connected = connected;
         }
 
+        // Actualizar estadísticas
+        function updateStats(stats) {
+            try {
+                if (!stats) return;
+                
+                // Compatibilidad con ambos formatos de estadísticas
+                const users = stats.usuariosRegistrados || stats.users || 0;
+                const songs = stats.cancionesDisponibles || stats.songs || 0;
+                const downloads = stats.descargasTotales || stats.downloads || 0;
+                
+                // Actualizar elementos en el DOM usando los IDs correctos
+                document.getElementById('totalUsers').textContent = users;
+                document.getElementById('totalSongs').textContent = songs;
+                document.getElementById('totalDownloads').textContent = downloads;
+                
+                // Actualizar estado interno
+                dashboardState.stats = { users, songs, downloads };
+                
+                console.log('Estadísticas actualizadas:', { users, songs, downloads });
+            } catch (error) {
+                console.error('Error al actualizar estadísticas:', error);
+            }
+        }
+        
         // Actualizar código QR
         function updateQRCode(qrData) {
             const qrContainer = document.getElementById('qrContainer');
@@ -467,22 +491,6 @@
                     <div class="loading-spinner"></div>
                     <p class="mt-3 text-muted">Esperando código QR...</p>
                 `;
-            }
-        }
-
-        // Actualizar estadísticas
-        function updateStats(stats) {
-            if (stats.users !== undefined) {
-                document.getElementById('totalUsers').textContent = stats.users;
-                dashboardState.stats.users = stats.users;
-            }
-            if (stats.songs !== undefined) {
-                document.getElementById('totalSongs').textContent = stats.songs;
-                dashboardState.stats.songs = stats.songs;
-            }
-            if (stats.downloads !== undefined) {
-                document.getElementById('totalDownloads').textContent = stats.downloads;
-                dashboardState.stats.downloads = stats.downloads;
             }
         }
 
@@ -553,22 +561,53 @@
             `;
             
             try {
+                console.log('Iniciando reinicio de QR...');
+                
+                // Limpiar localStorage primero para evitar usar QR antiguos
+                localStorage.removeItem('lastQrCode');
+                localStorage.removeItem('qrTimestamp');
+                
+                // Actualizar estado inmediatamente para mostrar carga
+                updateConnectionStatus(false);
+                updateQRCode(null);
+                
+                // Mostrar mensaje de espera
+                const qrContainer = document.getElementById('qrContainer');
+                qrContainer.innerHTML = `
+                    <div class="text-center">
+                        <div class="loading-spinner mb-3"></div>
+                        <p class="text-info">Reiniciando código QR...</p>
+                        <p class="text-muted">Espere un momento por favor</p>
+                    </div>
+                `;
+                
                 // Llamar al endpoint de reinicio de QR
                 const response = await fetch('/api/reset-qr', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
-                    }
+                    },
+                    // Agregar un timeout para evitar esperas infinitas
+                    signal: AbortSignal.timeout(15000) // 15 segundos máximo
                 });
                 
-                const result = await response.json();
+                // Verificar si la respuesta es exitosa
+                if (!response.ok) {
+                    throw new Error(`Error HTTP: ${response.status}`);
+                }
                 
-                if (result.success) {
-                    // Actualizar estado inmediatamente
-                    updateConnectionStatus(false);
-                    updateQRCode(null);
-                    localStorage.removeItem('lastQrCode');
-                    
+                // Intentar parsear la respuesta como JSON
+                let result;
+                const responseText = await response.text();
+                
+                try {
+                    result = JSON.parse(responseText);
+                } catch (parseError) {
+                    console.error('Error al parsear JSON:', responseText);
+                    throw new Error('Respuesta del servidor no es un JSON válido');
+                }
+                
+                if (result && result.success) {
                     // Mostrar mensaje de éxito
                     showAlert('Código QR reiniciado correctamente. Generando nuevo QR...', 'success');
                     
@@ -576,12 +615,21 @@
                     setTimeout(() => {
                         fetchDashboardData();
                     }, 2000);
+                    
+                    // Programar actualizaciones adicionales por si acaso
+                    setTimeout(() => fetchDashboardData(), 5000);
+                    setTimeout(() => fetchDashboardData(), 10000);
                 } else {
-                    throw new Error(result.message || 'Error al reiniciar el código QR');
+                    throw new Error(result?.message || 'Error desconocido al reiniciar el código QR');
                 }
             } catch (error) {
                 console.error('Error al reiniciar QR:', error);
                 showAlert('Error al reiniciar QR: ' + error.message, 'danger');
+                
+                // Intentar actualizar el dashboard de todos modos
+                setTimeout(() => {
+                    fetchDashboardData();
+                }, 3000);
             } finally {
                 // Restaurar el botón
                 btnReiniciar.disabled = false;
@@ -611,9 +659,37 @@
         // Obtener datos del dashboard
         async function fetchDashboardData() {
             try {
-                const response = await fetch('/api/dashboard-data');
-                const data = await response.json();
+                // Usar AbortSignal para evitar esperas infinitas
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 segundos timeout
                 
+                const response = await fetch('/api/dashboard-data', {
+                    signal: controller.signal,
+                    cache: 'no-store', // Evitar caché para siempre obtener datos frescos
+                    headers: {
+                        'Cache-Control': 'no-cache',
+                        'Pragma': 'no-cache'
+                    }
+                });
+                
+                clearTimeout(timeoutId);
+                
+                if (!response.ok) {
+                    throw new Error(`Error HTTP: ${response.status}`);
+                }
+                
+                // Intentar parsear la respuesta como JSON
+                let responseText = await response.text();
+                let data;
+                
+                try {
+                    data = JSON.parse(responseText);
+                } catch (parseError) {
+                    console.error('Error al parsear JSON:', responseText);
+                    throw new Error('Respuesta del servidor no es un JSON válido');
+                }
+                
+                // Actualizar estado de conexión
                 updateConnectionStatus(data.connected, data.lastConnection);
                 
                 // Asegurarnos de que el QR se actualice correctamente
@@ -657,15 +733,39 @@
                     }
                 }
                 
-                updateStats(data.stats);
+                // Actualizar estadísticas solo si existen
+                if (data && data.stats) {
+                    updateStats(data.stats);
+                }
+                
                 updateTimestamp();
             } catch (error) {
                 console.error('Error fetching dashboard data:', error);
+                
                 // En caso de error, intentar mostrar el QR guardado
                 const savedQR = localStorage.getItem('lastQrCode');
-                if (savedQR) {
+                const qrTimestamp = localStorage.getItem('qrTimestamp');
+                
+                if (savedQR && qrTimestamp && (Date.now() - parseInt(qrTimestamp)) < 120000) {
+                    console.log('Error en fetch, usando QR guardado del localStorage');
                     updateQRCode(savedQR);
+                } else {
+                    // Si no hay QR guardado o expiró, mostrar mensaje de error
+                    const qrContainer = document.getElementById('qrContainer');
+                    qrContainer.innerHTML = `
+                        <div class="text-center">
+                            <div class="text-danger mb-3">
+                                <i class="fas fa-exclamation-triangle" style="font-size: 3rem;"></i>
+                            </div>
+                            <p class="text-danger">Error al cargar datos del dashboard</p>
+                            <p class="text-muted">Intenta reiniciar el QR o recargar la página</p>
+                            <button class="btn btn-sm btn-primary mt-2" onclick="window.location.reload()">Recargar página</button>
+                        </div>
+                    `;
                 }
+                
+                // Mostrar alerta de error
+                showAlert('Error al cargar datos: ' + error.message, 'danger');
             }
         }
 

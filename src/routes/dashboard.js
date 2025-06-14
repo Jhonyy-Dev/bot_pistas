@@ -51,31 +51,82 @@ router.get('/', async (req, res) => {
 
 // Endpoint para obtener datos del dashboard
 router.get('/api/dashboard-data', async (req, res) => {
-    try {
-        // Intentar obtener estadísticas, pero manejar posibles errores
-        let stats = { totalUsuarios: 0, totalCanciones: 0, totalDescargas: 0 };
-        try {
-            stats = await obtenerEstadisticasCompletas();
-        } catch (statsError) {
-            logger.error(`Error obteniendo estadísticas: ${statsError.message}`);
-            // Continuar con valores predeterminados si hay error
-        }
-        
-        res.json({
-            connected: botStatus.isConnected,
-            qrCode: botStatus.qrCode,
-            lastConnection: botStatus.lastConnection,
-            stats: {
-                users: stats.totalUsuarios || 0,
-                songs: stats.totalCanciones || 0,
-                downloads: stats.totalDescargas || 0
-            },
-            timestamp: new Date().toISOString()
-        });
-    } catch (error) {
-        logger.error('Error obteniendo datos del dashboard:', error);
-        res.status(500).json({ error: 'Error obteniendo datos' });
+  try {
+    // Verificar si el servicio de WhatsApp está disponible
+    if (!whatsappServiceRef) {
+      logger.warn('Servicio de WhatsApp no disponible al solicitar datos del dashboard');
+      return res.status(503).json({ 
+        success: false,
+        error: 'Servicio de WhatsApp no disponible',
+        connected: false,
+        qrCode: null,
+        lastConnection: null,
+        stats: {
+          usuariosRegistrados: 0,
+          cancionesDisponibles: 0,
+          descargasTotales: 0
+        },
+        timestamp: new Date().toISOString()
+      });
     }
+    
+    // Obtener estado de conexión y QR
+    let connected = false;
+    let qrCode = null;
+    let lastConnection = null;
+    
+    try {
+      connected = whatsappServiceRef.isConnected();
+      qrCode = whatsappServiceRef.getQR();
+      lastConnection = whatsappServiceRef.getLastConnection();
+      
+      // Log para debugging
+      logger.debug(`Dashboard data - Connected: ${connected}, QR available: ${qrCode ? 'Yes' : 'No'}`);
+    } catch (whatsappError) {
+      logger.error(`Error al obtener estado de WhatsApp: ${whatsappError.message}`);
+      // Continuar con valores por defecto
+    }
+    
+    // Obtener estadísticas del bot
+    let stats = {
+      usuariosRegistrados: 0,
+      cancionesDisponibles: 0,
+      descargasTotales: 0
+    };
+    
+    try {
+      stats = await obtenerEstadisticasCompletas();
+    } catch (statsError) {
+      logger.error(`Error al obtener estadísticas: ${statsError.message}`);
+      // Continuamos con las estadísticas por defecto
+    }
+    
+    // Siempre devolver un JSON válido con todos los campos necesarios
+    return res.json({
+      success: true,
+      connected,
+      qrCode,
+      lastConnection,
+      stats,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    logger.error(`Error general al obtener datos del dashboard: ${error.message}`);
+    // En caso de error, devolver una respuesta de error pero con estructura válida
+    return res.status(500).json({ 
+      success: false,
+      error: error.message,
+      connected: false,
+      qrCode: null,
+      lastConnection: null,
+      stats: {
+        usuariosRegistrados: 0,
+        cancionesDisponibles: 0,
+        descargasTotales: 0
+      },
+      timestamp: new Date().toISOString()
+    });
+  }
 });
 
 /**
@@ -185,17 +236,37 @@ router.post('/api/reset-qr', async (req, res) => {
     }
     
     // Limpiar archivos de sesión
-    const sessionDir = path.join(process.cwd(), '.wwebjs_auth');
-    await fs.emptyDir(sessionDir);
-    logger.info('Archivos de sesión eliminados correctamente');
+    try {
+      const sessionDir = path.join(process.cwd(), '.wwebjs_auth');
+      await fs.emptyDir(sessionDir);
+      logger.info('Archivos de sesión eliminados correctamente');
+    } catch (fsError) {
+      logger.warn(`Error al limpiar archivos de sesión: ${fsError.message}`);
+      // Continuamos aunque falle la limpieza de archivos
+    }
     
     // Reiniciar el servicio de WhatsApp
-    await whatsappServiceRef.reiniciar();
+    if (whatsappServiceRef && typeof whatsappServiceRef.reiniciar === 'function') {
+      await whatsappServiceRef.reiniciar();
+      logger.info('Servicio de WhatsApp reiniciado correctamente desde API');
+    } else {
+      logger.warn('No se pudo reiniciar el servicio de WhatsApp: método no disponible');
+    }
     
-    res.json({ success: true, message: 'Código QR reiniciado correctamente' });
+    // Responder siempre con JSON válido
+    return res.json({ 
+      success: true, 
+      message: 'Código QR reiniciado correctamente',
+      timestamp: new Date().toISOString() 
+    });
   } catch (error) {
     logger.error(`Error al reiniciar QR: ${error.message}`);
-    res.status(500).json({ success: false, message: `Error al reiniciar QR: ${error.message}` });
+    // Asegurar que siempre devolvemos un JSON válido incluso en caso de error
+    return res.status(500).json({ 
+      success: false, 
+      message: `Error al reiniciar QR: ${error.message}`,
+      timestamp: new Date().toISOString()
+    });
   }
 });
 
