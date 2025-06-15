@@ -618,7 +618,7 @@ const handleSearch = async (socket, sender, searchTerm, usuario) => {
     const isSearching = userStates.get(searchKey);
     
     if (isSearching) {
-      logger.warn(`Evitando búsqueda duplicada para ${sender}: "${searchTerm}"`); 
+      logger.warn(`Evitando búsqueda duplicada para ${sender}: "${searchTerm}"`);
       return;
     }
     
@@ -628,7 +628,7 @@ const handleSearch = async (socket, sender, searchTerm, usuario) => {
     // Establecer un timeout para limpiar el estado de búsqueda después de 5 segundos
     setTimeout(() => {
       userStates.delete(searchKey);
-      logger.debug(`Estado de búsqueda limpiado para ${sender}: "${searchTerm}"`); 
+      logger.debug(`Estado de búsqueda limpiado para ${sender}: "${searchTerm}"`);
     }, 5000);
     
     // Buscar canciones que coincidan
@@ -638,7 +638,7 @@ const handleSearch = async (socket, sender, searchTerm, usuario) => {
     if (!Array.isArray(canciones)) {
       logger.debug(`Resultado de búsqueda no es un array, convirtiendo...`);
       canciones = [].concat(canciones).filter(Boolean);
-    }  
+      
       // Si es un resultado directo de procedimiento almacenado
       if (canciones && typeof canciones === 'object') {
         // Si tiene una propiedad que contiene el array real (resultado de procedimiento almacenado)
@@ -734,7 +734,7 @@ const handleSearch = async (socket, sender, searchTerm, usuario) => {
     userStates.set(sender, {
       step: 'seleccion',
       results: resultadosMostrados,
-      searchTerm
+      searchTerm: searchTerm
     });
     
     logger.info(`Búsqueda exitosa para "${searchTerm}": ${resultadosMostrados.length} resultados mostrados de ${canciones.length} encontrados`);
