@@ -674,21 +674,30 @@ const handleSearch = async (socket, sender, searchTerm, usuario) => {
       songResults.push(`Presiona ${i + 1}. ${titulo.toUpperCase()}`);
     }
     
-    // Combinar los resultados con el recordatorio para garantizar que aparezca
+    // Solo incluir los resultados de la búsqueda en el primer mensaje
     const resultMessage = [
       `🔍 *Resultados de búsqueda para "${searchTerm}"*`,
       "",
-      songResults.join("\n\n"),
-      "",
-      "⋮⋮⋮⋮⋮⋮⋮⋮⋮⋮⋮⋮⋮⋮⋮",
-      "",
-      `📱_*Responde con el número de la canción que quieres*_.`,
-      "",
-      `💰 Costo por pista: 1 crédito.`,
-      `Tienes *${usuario.creditos} créditos* disponibles.`
+      songResults.join("\n\n")
     ].join("\n");
     
+    // Enviar primero el mensaje con los resultados
     await socket.sendMessage(sender, { text: resultMessage });
+    
+    // Breve retraso para asegurar que los mensajes no colisionen en WhatsApp
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    // Enviar el mensaje de recordatorio como un mensaje COMPLETAMENTE SEPARADO
+    // con formato exactamente como lo necesita el usuario
+    const reminderMessage = `📱_*Responde con el número de la canción que quieres*_.
+
+💰 Costo por pista: 1 crédito.
+Tienes *${usuario.creditos} créditos* disponibles.`;
+    
+    // Log para verificar que el segundo mensaje se envía correctamente
+    logger.info(`Enviando recordatorio para ${sender}: ${reminderMessage}`);
+    
+    await socket.sendMessage(sender, { text: reminderMessage });
     
     // Guardar resultados en el estado del usuario
     userStates.set(sender, {
