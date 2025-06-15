@@ -533,8 +533,9 @@ const sendConversationalResponse = async (socket, sender, usuario) => {
   const message = `${saludo}\n\n` +
     `Recuerda que tienes *${usuario.creditos} créditos* disponibles.\n\n` +
     `📌 *¿Cómo pedir una canción?*\n` +
-    `• *"Sin mencionar la palabra "MIX" para nada"* \n` +
-    `• "Menciona *SOLO* el nombre del grupo, canción o artista\n\n` +
+    `• Menciona *SOLO* el nombre del grupo, canción o artista\n` +
+    `• Por ejemplo: "Nectar", "Arbolito", "Los Ecos"\n\n` +
+    `✨ ¡Ahora también puedes buscar por "mix" y te mostraremos los resultados más relevantes!\n\n` +
     `También puedes usar *!ayuda* para ver todos los comandos disponibles.`;
     
   await socket.sendMessage(sender, { text: message });
@@ -606,6 +607,22 @@ const sendCreditInfo = async (socket, sender, usuario) => {
  */
 const handleSearch = async (socket, sender, searchTerm, usuario) => {
   try {
+    // ELIMINAR LA PALABRA MIX: Filtrar la palabra "mix" (y variaciones) del término de búsqueda
+    const originalTerm = searchTerm;
+    
+    // Eliminar la palabra "mix" del inicio, incluyendo variantes con espacios y signos
+    const cleanedTerm = searchTerm
+      .replace(/^\s*mix\s+/i, '') // Quitar "mix " del inicio
+      .replace(/^\s*mix-\s*/i, '') // Quitar "mix-" del inicio
+      .replace(/^\s*mix:\s*/i, '') // Quitar "mix:" del inicio
+      .replace(/\s+mix\s+/i, ' ') // Quitar "mix" entre palabras
+      .trim();
+    
+    // Si el término limpio es diferente del original, registrarlo para depuración
+    if (cleanedTerm !== originalTerm) {
+      logger.info(`Término de búsqueda limpio: "${originalTerm}" → "${cleanedTerm}"`);
+      searchTerm = cleanedTerm || originalTerm; // Usar el término limpio, o el original si quedó vacío
+    }
     // Evitar búsquedas duplicadas verificando si ya se está procesando esta búsqueda
     const searchKey = `${sender}_${searchTerm}`;
     const isSearching = userStates.get(searchKey);
@@ -1079,6 +1096,22 @@ const handleSongSelection = async (socket, sender, message, usuario, userState) 
  */
 async function handleDirectSongRequest(socket, sender, searchTerm, usuario) {
   try {
+    // ELIMINAR LA PALABRA MIX: Filtrar la palabra "mix" (y variaciones) del término de búsqueda
+    const originalTerm = searchTerm;
+    
+    // Eliminar la palabra "mix" del inicio, incluyendo variantes con espacios y signos
+    const cleanedTerm = searchTerm
+      .replace(/^\s*mix\s+/i, '') // Quitar "mix " del inicio
+      .replace(/^\s*mix-\s*/i, '') // Quitar "mix-" del inicio
+      .replace(/^\s*mix:\s*/i, '') // Quitar "mix:" del inicio
+      .replace(/\s+mix\s+/i, ' ') // Quitar "mix" entre palabras
+      .trim();
+    
+    // Si el término limpio es diferente del original, registrarlo para depuración y usarlo
+    if (cleanedTerm !== originalTerm) {
+      logger.info(`Término de búsqueda directo limpio: "${originalTerm}" → "${cleanedTerm}"`);
+      searchTerm = cleanedTerm || originalTerm; // Usar el término limpio, o el original si quedó vacío
+    }
     // Verificar si el usuario tiene créditos suficientes
     if (usuario.creditos <= 0) {
       await socket.sendMessage(sender, {
