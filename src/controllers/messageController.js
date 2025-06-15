@@ -1025,6 +1025,37 @@ async function handleDirectSongRequest(socket, sender, searchTerm, usuario) {
     
     // Enviar mensaje con opciones
     await socket.sendMessage(sender, { text: optionsMessage });
+    
+    // MENSAJE CRÍTICO: Enviar recordatorio como mensaje separado
+    logger.info(`[CRITICAL] FORZANDO envío de recordatorio para ${sender} desde handleDirectSongRequest...`);
+    
+    // Usar setTimeout para garantizar que se envíe como mensaje separado
+    setTimeout(async () => {
+      try {
+        // Mensaje exactamente en el formato solicitado
+        const reminderMessage = `📱*DAME EL NUMERO DE LA CANCION QUE QUIERES*\n\n💰 Costo por pista: 1 crédito.\n Tienes *${usuario.creditos} créditos* disponibles.`;
+        
+        // GARANTIZAR el envío con await
+        await socket.sendMessage(sender, {
+          text: reminderMessage,
+          // Parámetros para tratarlo como mensaje separado
+          ctwaContext: { "disappearingMode": false },
+          ephemeralSettingTimestamp: Date.now(),
+          participant: sender
+        });
+        
+        logger.info(`[SUCCESS] Recordatorio enviado con éxito desde handleDirectSongRequest para ${sender}`);
+      } catch (error) {
+        logger.error(`[CRITICAL-ERROR] Error al enviar recordatorio desde handleDirectSongRequest: ${error.message}`);
+        // Intentar nuevamente con formato simple si falló
+        try {
+          await socket.sendMessage(sender, { text: `📱*DAME EL NUMERO DE LA CANCION QUE QUIERES*\n\n💰 Costo por pista: 1 crédito.\n Tienes *${usuario.creditos} créditos* disponibles.` });
+          logger.info(`[SUCCESS] Recordatorio enviado en segundo intento desde handleDirectSongRequest para ${sender}`);
+        } catch (retryError) {
+          logger.error(`[FATAL-ERROR] Fallo total al enviar recordatorio desde handleDirectSongRequest: ${retryError.message}`);
+        }
+      }
+    }, 1500); // Esperar 1.5 segundos para garantizar que se envíe después de los resultados
   } catch (error) {
     logger.error(`Error al manejar solicitud directa de canción: ${error.message}`);
     await socket.sendMessage(sender, {
