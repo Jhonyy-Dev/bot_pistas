@@ -542,16 +542,6 @@ const sendConversationalResponse = async (socket, sender, usuario) => {
 };
 
 /**
- * Envía un mensaje genérico cuando no se detecta una petición clara
- */
-const sendGenericMessage = async (socket, sender, usuario) => {
-  const message = `📱*DAME EL NUMERO DE LA CANCION QUE QUIERES*\n\n` +
-    `💰 Costo por pista: 1 crédito.\n Tienes *${usuario.creditos} créditos* disponibles.`;
-    
-  await socket.sendMessage(sender, { text: message });
-};
-
-/**
  * Envía un mensaje de bienvenida cuando el usuario envía un mensaje corto
  */
 const sendWelcomeMessage = async (socket, sender, usuario) => {
@@ -710,6 +700,18 @@ const handleSearch = async (socket, sender, searchTerm, usuario) => {
     // Usar el método directo de WhatsApp para enviar un mensaje texto normal (como lo hace WhatsApp oficial)
     logger.info(`[CRITICAL] Preparando recordatorio para ${sender} usando método nativo...`);
     
+    // Preparar el mensaje exactamente en el formato solicitado
+    const reminderContent = {
+      text: `📱*DAME EL NUMERO DE LA CANCION QUE QUIERES*\n\n
+💰 Costo por pista: 1 crédito.\n Tienes *${usuario.creditos} créditos* disponibles.`,
+      // Configuración adicional que usa WhatsApp oficial para mensajes separados
+      ctwaContext: {
+        "disappearingMode": false
+      },
+      ephemeralSettingTimestamp: Date.now(),
+      participant: sender
+    };
+    
     // Enviar como mensaje separado con alta prioridad
     try {
       // Asegurarse de que el usuario no esté en medio de un proceso de descarga
@@ -721,8 +723,7 @@ const handleSearch = async (socket, sender, searchTerm, usuario) => {
       
       logger.info(`[CRITICAL-SEND] Enviando recordatorio para ${sender}...`);
       // Usar el método asíncrono nativo sin await para evitar bloqueos
-      socket.sendMessage(sender, {text: `📱 *DAME EL NUMERO DE LA CANCION QUE QUIERES* \n\n
-💰 Costo por pista: 1 crédito.\n Tienes *${usuario.creditos} créditos* disponibles.`})
+      socket.sendMessage(sender, reminderContent)
         .then(() => logger.info(`[SUCCESS] Recordatorio enviado para ${sender}`))
         .catch(error => logger.error(`[ERROR] Fallo al enviar recordatorio: ${error.message}`));
     } catch (error) {
