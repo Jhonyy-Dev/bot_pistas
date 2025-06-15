@@ -540,12 +540,8 @@ const sendConversationalResponse = async (socket, sender, usuario) => {
  * Envía un mensaje genérico cuando no se detecta una petición clara
  */
 const sendGenericMessage = async (socket, sender, usuario) => {
-  const message = `¡Gracias por tu mensaje! Si estás buscando música, puedes pedirme una canción de la siguiente manera:\n\n` +
-    `• "Dame la canción de [nombre]"\n` +
-    `• "Quiero la canción [nombre]"\n` +
-    `• "Busca la canción [nombre]"\n\n` +
-    `Actualmente tienes *${usuario.creditos} créditos* disponibles.\n\n` +
-    `Si necesitas ayuda con otros comandos, escribe *!ayuda*.`;
+  const message = `Responde con el número de la canción que quieres descargar.\n\n` +
+    `💰 Costo: 1 crédito. Tienes *${usuario.creditos} créditos* disponibles.`;
     
   await socket.sendMessage(sender, { text: message });
 };
