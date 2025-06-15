@@ -696,27 +696,40 @@ const handleSearch = async (socket, sender, searchTerm, usuario) => {
     // Enviar primero el mensaje con los resultados
     await socket.sendMessage(sender, { text: resultMessage });
     
-    // Usar el método directo de WhatsApp para enviar un mensaje texto normal (como lo hace WhatsApp oficial)
-    logger.info(`[CRITICAL] Preparando recordatorio para ${sender} usando método nativo...`);
+    // MENSAJE CRÍTICO: Siempre enviar recordatorio después de los resultados
+    logger.info(`[CRITICAL] FORZANDO envío de recordatorio para ${sender} como mensaje separado...`);
     
-    
-    // Enviar como mensaje separado con alta prioridad
-    try {
-      // Asegurarse de que el usuario no esté en medio de un proceso de descarga
-      const currentState = userStates.get(sender) || {};
-      if (currentState.processingDownload) {
-        logger.info(`[SKIP] No enviando recordatorio para ${sender} porque ya está descargando una canción`);
-        return;
+    // Usaremos setTimeout para asegurarnos que este mensaje se envíe DESPUÉS de los resultados
+    // y con mayor prioridad, como mensaje completamente separado
+    setTimeout(async () => {
+      try {
+        // SIEMPRE enviar el recordatorio, sin condiciones
+        logger.info(`[CRITICAL-SEND] Enviando recordatorio para ${sender}...`);
+        
+        // Mensaje exactamente en el formato solicitado
+        const reminderMessage = `📱*DAME EL NUMERO DE LA CANCION QUE QUIERES*\n\n💰 Costo por pista: 1 crédito.\n Tienes *${usuario.creditos} créditos* disponibles.`;
+        
+        // GARANTIZAR el envío con await
+        await socket.sendMessage(sender, {
+          text: reminderMessage,
+          // Estos parámetros garantizan que WhatsApp lo trate como mensaje separado
+          ctwaContext: { "disappearingMode": false },
+          ephemeralSettingTimestamp: Date.now(),
+          participant: sender
+        });
+        
+        logger.info(`[SUCCESS] Recordatorio enviado con éxito para ${sender}`);
+      } catch (error) {
+        logger.error(`[CRITICAL-ERROR] Error al enviar recordatorio: ${error.message}`);
+        // Intentar nuevamente con otro método si falló
+        try {
+          await socket.sendMessage(sender, { text: `📱*DAME EL NUMERO DE LA CANCION QUE QUIERES*\n\n💰 Costo por pista: 1 crédito.\n Tienes *${usuario.creditos} créditos* disponibles.` });
+          logger.info(`[SUCCESS] Recordatorio enviado en segundo intento para ${sender}`);
+        } catch (retryError) {
+          logger.error(`[FATAL-ERROR] Fallo total al enviar recordatorio: ${retryError.message}`);
+        }
       }
-      
-      logger.info(`[CRITICAL-SEND] Enviando recordatorio para ${sender}...`);
-      // Usar el método asíncrono nativo sin await para evitar bloqueos
-      socket.sendMessage(sender, {text: `📱*DAME EL NUMERO DE LA CANCION QUE QUIERES*\n\n💰 Costo por pista: 1 crédito.\n Tienes *${usuario.creditos} créditos* disponibles.`})
-        .then(() => logger.info(`[SUCCESS] Recordatorio enviado para ${sender}`))
-        .catch(error => logger.error(`[ERROR] Fallo al enviar recordatorio: ${error.message}`));
-    } catch (error) {
-      logger.error(`[CRITICAL-ERROR] Error al preparar recordatorio: ${error.message}`);
-    }
+    }, 1500); // Esperar 1.5 segundos después de enviar resultados para garantizar orden correcto
     
     // Guardar resultados en el estado del usuario
     userStates.set(sender, {
