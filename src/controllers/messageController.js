@@ -1006,7 +1006,7 @@ async function handleDirectSongRequest(socket, sender, searchTerm, usuario) {
     setTimeout(async () => {
       try {
         // Mensaje exactamente en el formato solicitado
-        const reminderMessage = `📱*DAME EL NÚMERO DE LA CANCIÓN QUE QUIERES*\n\n💰 Costo por pista: 1 crédito.\n Tienes *${usuario.creditos} créditos* disponibles.`;
+        const reminderMessage = `📱 *DAME EL NÚMERO DE LA CANCIÓN QUE QUIERES* \n\n💰 Costo por pista: 1 crédito.\n Tienes *${usuario.creditos} créditos* disponibles.`;
         
         // GARANTIZAR el envío con await
         await socket.sendMessage(sender, {
@@ -1022,7 +1022,7 @@ async function handleDirectSongRequest(socket, sender, searchTerm, usuario) {
         logger.error(`[CRITICAL-ERROR] Error al enviar recordatorio desde handleDirectSongRequest: ${error.message}`);
         // Intentar nuevamente con formato simple si falló
         try {
-          await socket.sendMessage(sender, { text: `📱*DAME EL NÚMERO DE LA CANCIÓN QUE QUIERES*\n\n💰 Costo por pista: 1 crédito.\n Tienes *${usuario.creditos} créditos* disponibles.` });
+          await socket.sendMessage(sender, { text: `📱 *DAME EL NÚMERO DE LA CANCIÓN QUE QUIERES* \n\n💰 Costo por pista: 1 crédito.\n Tienes *${usuario.creditos} créditos* disponibles.` });
           logger.info(`[SUCCESS] Recordatorio enviado en segundo intento desde handleDirectSongRequest para ${sender}`);
         } catch (retryError) {
           logger.error(`[FATAL-ERROR] Fallo total al enviar recordatorio desde handleDirectSongRequest: ${retryError.message}`);
