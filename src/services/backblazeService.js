@@ -168,12 +168,12 @@ async function verificarArchivoExiste(archivoPath) {
 }
 
 /**
- * Lista archivos en el bucket con un prefijo específico
+ * Lista archivos en el bucket con un prefijo específico con soporte completo de paginación
  * @param {string} [prefix=''] - Prefijo para filtrar archivos
- * @param {number} [maxItems=1000] - Número máximo de items a devolver
- * @returns {Promise<Array>} - Lista de objetos
+ * @param {number} [maxItems=10000] - Número máximo de items a devolver en total
+ * @returns {Promise<Array>} - Lista completa de objetos combinando todas las páginas
  */
-async function listarArchivos(prefix = '', maxItems = 1000) {
+async function listarArchivos(prefix = '', maxItems = 10000) {
   try {
     if (!process.env.B2_BUCKET_NAME) {
       console.log('❌ B2_BUCKET_NAME no está configurado');
@@ -182,24 +182,63 @@ async function listarArchivos(prefix = '', maxItems = 1000) {
     
     console.log(`📂 Listando archivos en bucket: ${process.env.B2_BUCKET_NAME}, prefijo: "${prefix}", max: ${maxItems}`);
     
-    const params = {
+    // Array para almacenar todos los archivos de todas las páginas
+    let todosLosArchivos = [];
+    
+    // Parámetros iniciales para la primera página
+    let params = {
       Bucket: process.env.B2_BUCKET_NAME,
       Prefix: prefix,
-      MaxKeys: maxItems
+      MaxKeys: 1000 // Máximo por página permitido por Backblaze
     };
     
-    console.log(`🔍 Parámetros de búsqueda:`, params);
+    // Variable para controlar si hay más páginas
+    let hayMásPáginas = true;
+    // Número de página actual para logging
+    let numeroPagina = 1;
     
-    const response = await s3Client.send(new ListObjectsV2Command(params));
+    // Obtener todas las páginas hasta llegar al límite o no haber más archivos
+    while (hayMásPáginas && todosLosArchivos.length < maxItems) {
+      console.log(`🔍 Obteniendo página ${numeroPagina} de archivos...`);
+      console.log(`🔍 Parámetros de búsqueda:`, params);
+      
+      // Obtener la página actual
+      const response = await s3Client.send(new ListObjectsV2Command(params));
+      
+      console.log(`📊 Respuesta de Backblaze - Página ${numeroPagina} - Truncated: ${response.IsTruncated}, Count: ${response.KeyCount}, Contents length: ${response.Contents?.length || 0}`);
+      
+      // Agregar los archivos de esta página al resultado total
+      if (response.Contents && response.Contents.length > 0) {
+        todosLosArchivos = [...todosLosArchivos, ...response.Contents];
+        console.log(`⏭️ Archivos acumulados hasta ahora: ${todosLosArchivos.length}`);
+      }
+      
+      // Verificar si hay más páginas
+      if (response.IsTruncated && response.NextContinuationToken) {
+        // Configurar parámetros para la siguiente página
+        params.ContinuationToken = response.NextContinuationToken;
+        numeroPagina++;
+      } else {
+        // No hay más páginas
+        hayMásPáginas = false;
+      }
+      
+      // Verificar si ya alcanzamos el límite máximo
+      if (todosLosArchivos.length >= maxItems) {
+        console.log(`⚠️ Alcanzado límite máximo de ${maxItems} archivos. Truncando resultados.`);
+        hayMásPáginas = false;
+      }
+    }
     
-    console.log(`📊 Respuesta de Backblaze - Truncated: ${response.IsTruncated}, Count: ${response.KeyCount}, Contents length: ${response.Contents?.length || 0}`);
+    console.log(`💾 Total de archivos obtenidos de todas las páginas: ${todosLosArchivos.length}`);
     
-    if (!response.Contents || response.Contents.length === 0) {
+    if (todosLosArchivos.length === 0) {
       console.log('📭 No se encontraron archivos en Backblaze B2');
       return [];
     }
     
-    const archivos = response.Contents
+    // Usar la lista acumulada de todas las páginas (todosLosArchivos) en lugar de solo la última respuesta
+    const archivos = todosLosArchivos
       .filter(obj => obj.Key && obj.Key.toLowerCase().endsWith('.mp3'))
       .map(obj => ({
         nombre: obj.Key,
