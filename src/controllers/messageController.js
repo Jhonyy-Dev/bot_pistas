@@ -684,20 +684,28 @@ const handleSearch = async (socket, sender, searchTerm, usuario) => {
     // Enviar primero el mensaje con los resultados
     await socket.sendMessage(sender, { text: resultMessage });
     
-    // Breve retraso para asegurar que los mensajes no colisionen en WhatsApp
-    await new Promise(resolve => setTimeout(resolve, 500));
+    // Usar un retraso más largo (1.5 segundos) entre mensajes
+    logger.info(`Esperando 1500ms antes de enviar recordatorio para ${sender}...`);
     
-    // Enviar el mensaje de recordatorio como un mensaje COMPLETAMENTE SEPARADO
-    // con formato exactamente como lo necesita el usuario
-    const reminderMessage = `📱_*Responde con el número de la canción que quieres*_.
+    // Enviar el recordatorio con un setTimeout para asegurar su ejecución incluso si hay cambios de contexto
+    setTimeout(async () => {
+      try {
+        // Mensaje EXACTAMENTE con el formato solicitado
+        const exactReminderMessage = `📱_*Responde con el número de la canción que quieres*_.
 
 💰 Costo por pista: 1 crédito.
-Tienes *${usuario.creditos} créditos* disponibles.`;
-    
-    // Log para verificar que el segundo mensaje se envía correctamente
-    logger.info(`Enviando recordatorio para ${sender}: ${reminderMessage}`);
-    
-    await socket.sendMessage(sender, { text: reminderMessage });
+ Tienes *${usuario.creditos} créditos* disponibles.`;
+        
+        logger.info(`[CRITICAL] Enviando recordatorio para ${sender}`);
+        
+        // Enviar directamente sin pasar por otra función
+        await socket.sendMessage(sender, { text: exactReminderMessage });
+        
+        logger.info(`[SUCCESS] Recordatorio enviado para ${sender}`);
+      } catch (error) {
+        logger.error(`[ERROR] Error al enviar recordatorio: ${error.message}`);
+      }
+    }, 1500);
     
     // Guardar resultados en el estado del usuario
     userStates.set(sender, {
