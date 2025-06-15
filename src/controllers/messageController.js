@@ -533,9 +533,8 @@ const sendConversationalResponse = async (socket, sender, usuario) => {
   const message = `${saludo}\n\n` +
     `Recuerda que tienes *${usuario.creditos} créditos* disponibles.\n\n` +
     `📌 *¿Cómo pedir una canción?*\n` +
-    `• Menciona *SOLO* el nombre del grupo, canción o artista\n` +
-    `• Por ejemplo: "Nectar", "Arbolito", "Los Ecos"\n\n` +
-    `✨ ¡Ahora también puedes buscar por "mix" y te mostraremos los resultados más relevantes!\n\n` +
+    `• Menciona *SOLO* el nombre del *GRUPO, CANCION o ARTISTA* \n\n` +
+
     `También puedes usar *!ayuda* para ver todos los comandos disponibles.`;
     
   await socket.sendMessage(sender, { text: message });
