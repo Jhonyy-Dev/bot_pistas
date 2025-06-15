@@ -613,14 +613,32 @@ const sendCreditInfo = async (socket, sender, usuario) => {
  */
 const handleSearch = async (socket, sender, searchTerm, usuario) => {
   try {
+    // Evitar búsquedas duplicadas verificando si ya se está procesando esta búsqueda
+    const searchKey = `${sender}_${searchTerm}`;
+    const isSearching = userStates.get(searchKey);
+    
+    if (isSearching) {
+      logger.warn(`Evitando búsqueda duplicada para ${sender}: "${searchTerm}"`); 
+      return;
+    }
+    
+    // Marcar que estamos procesando esta búsqueda
+    userStates.set(searchKey, true);
+    
+    // Establecer un timeout para limpiar el estado de búsqueda después de 5 segundos
+    setTimeout(() => {
+      userStates.delete(searchKey);
+      logger.debug(`Estado de búsqueda limpiado para ${sender}: "${searchTerm}"`); 
+    }, 5000);
+    
     // Buscar canciones que coincidan
     let canciones = await cancionController.buscarCanciones(searchTerm);
     
-    // Asegurar que canciones sea un array manipulable
-    // Esto soluciona el error "canciones.slice is not a function"
+    // Si no es un array, convertirlo y filtrar valores nulos y vacíos
     if (!Array.isArray(canciones)) {
-      logger.debug(`Resultado de búsqueda no es array, convirtiendo: ${typeof canciones}`);
-      
+      logger.debug(`Resultado de búsqueda no es un array, convirtiendo...`);
+      canciones = [].concat(canciones).filter(Boolean);
+    }  
       // Si es un resultado directo de procedimiento almacenado
       if (canciones && typeof canciones === 'object') {
         // Si tiene una propiedad que contiene el array real (resultado de procedimiento almacenado)
@@ -684,28 +702,33 @@ const handleSearch = async (socket, sender, searchTerm, usuario) => {
     // Enviar primero el mensaje con los resultados
     await socket.sendMessage(sender, { text: resultMessage });
     
-    // Usar un retraso más largo (1.5 segundos) entre mensajes
-    logger.info(`Esperando 1500ms antes de enviar recordatorio para ${sender}...`);
+    // Usar el método directo de WhatsApp para enviar un mensaje texto normal (como lo hace WhatsApp oficial)
+    logger.info(`[CRITICAL] Preparando recordatorio para ${sender} usando método nativo...`);
     
-    // Enviar el recordatorio con un setTimeout para asegurar su ejecución incluso si hay cambios de contexto
-    setTimeout(async () => {
-      try {
-        // Mensaje EXACTAMENTE con el formato solicitado
-        const exactReminderMessage = `📱_*Responde con el número de la canción que quieres*_.
+    // Preparar el mensaje exactamente en el formato solicitado
+    const reminderContent = {
+      text: `📱_*Responde con el número de la canción que quieres*_.
 
 💰 Costo por pista: 1 crédito.
- Tienes *${usuario.creditos} créditos* disponibles.`;
-        
-        logger.info(`[CRITICAL] Enviando recordatorio para ${sender}`);
-        
-        // Enviar directamente sin pasar por otra función
-        await socket.sendMessage(sender, { text: exactReminderMessage });
-        
-        logger.info(`[SUCCESS] Recordatorio enviado para ${sender}`);
-      } catch (error) {
-        logger.error(`[ERROR] Error al enviar recordatorio: ${error.message}`);
-      }
-    }, 1500);
+ Tienes *${usuario.creditos} créditos* disponibles.`,
+      // Configuración adicional que usa WhatsApp oficial para mensajes separados
+      ctwaContext: {
+        "disappearingMode": false
+      },
+      ephemeralSettingTimestamp: Date.now(),
+      participant: sender
+    };
+    
+    // Enviar como mensaje separado con alta prioridad
+    try {
+      logger.info(`[CRITICAL-SEND] Enviando recordatorio para ${sender}...`);
+      // Usar el método asíncrono nativo sin await para evitar bloqueos
+      socket.sendMessage(sender, reminderContent)
+        .then(() => logger.info(`[SUCCESS] Recordatorio enviado para ${sender}`))
+        .catch(error => logger.error(`[ERROR] Fallo al enviar recordatorio: ${error.message}`));
+    } catch (error) {
+      logger.error(`[CRITICAL-ERROR] Error al preparar recordatorio: ${error.message}`);
+    }
     
     // Guardar resultados en el estado del usuario
     userStates.set(sender, {
