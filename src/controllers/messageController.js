@@ -533,9 +533,8 @@ const sendConversationalResponse = async (socket, sender, usuario) => {
   const message = `${saludo}\n\n` +
     `Recuerda que tienes *${usuario.creditos} créditos* disponibles.\n\n` +
     `*¿Cómo pedir una canción?*\n` +
-    `• "Dame la canción de Despacito"\n` +
-    `• "Quiero la canción Gasolina"\n` +
-    `• "Tienes la canción de Bad Bunny"\n\n` +
+    `• "Menciona soloel nombre de la canción"\n` +
+    `• "Si no te lo muestra, menciona el nombre del grupo o artista"\n` +
     `También puedes usar *!ayuda* para ver todos los comandos disponibles.`;
     
   await socket.sendMessage(sender, { text: message });
@@ -1007,7 +1006,7 @@ async function handleDirectSongRequest(socket, sender, searchTerm, usuario) {
     setTimeout(async () => {
       try {
         // Mensaje exactamente en el formato solicitado
-        const reminderMessage = `📱*DAME EL NUMERO DE LA CANCION QUE QUIERES*\n\n💰 Costo por pista: 1 crédito.\n Tienes *${usuario.creditos} créditos* disponibles.`;
+        const reminderMessage = `📱*DAME EL NÚMERO DE LA CANCIÓN QUE QUIERES*\n\n💰 Costo por pista: 1 crédito.\n Tienes *${usuario.creditos} créditos* disponibles.`;
         
         // GARANTIZAR el envío con await
         await socket.sendMessage(sender, {
@@ -1023,7 +1022,7 @@ async function handleDirectSongRequest(socket, sender, searchTerm, usuario) {
         logger.error(`[CRITICAL-ERROR] Error al enviar recordatorio desde handleDirectSongRequest: ${error.message}`);
         // Intentar nuevamente con formato simple si falló
         try {
-          await socket.sendMessage(sender, { text: `📱*DAME EL NUMERO DE LA CANCION QUE QUIERES*\n\n💰 Costo por pista: 1 crédito.\n Tienes *${usuario.creditos} créditos* disponibles.` });
+          await socket.sendMessage(sender, { text: `📱*DAME EL NÚMERO DE LA CANCIÓN QUE QUIERES*\n\n💰 Costo por pista: 1 crédito.\n Tienes *${usuario.creditos} créditos* disponibles.` });
           logger.info(`[SUCCESS] Recordatorio enviado en segundo intento desde handleDirectSongRequest para ${sender}`);
         } catch (retryError) {
           logger.error(`[FATAL-ERROR] Fallo total al enviar recordatorio desde handleDirectSongRequest: ${retryError.message}`);
