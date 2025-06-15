@@ -540,17 +540,6 @@ const sendConversationalResponse = async (socket, sender, usuario) => {
     
   await socket.sendMessage(sender, { text: message });
 };
-
-/**
- * Envía un mensaje genérico cuando no se detecta una petición clara
- */
-const sendGenericMessage = async (socket, sender, usuario) => {
-  const message = `📱*DAME EL NUMERO DE LA CANCION QUE QUIERES*\n\n` +
-    `💰 Costo por pista: 1 crédito.\n Tienes *${usuario.creditos} créditos* disponibles.`;
-    
-  await socket.sendMessage(sender, { text: message });
-};
-
 /**
  * Envía un mensaje de bienvenida cuando el usuario envía un mensaje corto
  */
@@ -722,7 +711,7 @@ const handleSearch = async (socket, sender, searchTerm, usuario) => {
       
       logger.info(`[CRITICAL-SEND] Enviando recordatorio para ${sender}...`);
       // Usar el método asíncrono nativo sin await para evitar bloqueos
-      socket.sendMessage(sender, {text: "📱*DAME EL NUMERO DE LA CANCION QUE QUIERES*\n\n💰 Costo por pista: 1 crédito.\n Tienes *${usuario.creditos} créditos* disponibles."})
+      socket.sendMessage(sender, {text: `📱*DAME EL NUMERO DE LA CANCION QUE QUIERES*\n\n💰 Costo por pista: 1 crédito.\n Tienes *${usuario.creditos} créditos* disponibles.`})
         .then(() => logger.info(`[SUCCESS] Recordatorio enviado para ${sender}`))
         .catch(error => logger.error(`[ERROR] Fallo al enviar recordatorio: ${error.message}`));
     } catch (error) {
@@ -795,11 +784,11 @@ const handleSongSelection = async (socket, sender, message, usuario, userState) 
       // Variable para rastrear si tuvimos éxito al obtener el archivo
       let buffer;
       
-      // Verificar que la canción tenga URL de Google Drive válida
+      // Verificar que la canción tenga URL externa válida
       if (!selectedSong.url_externa || selectedSong.url_externa === "No tiene URL externa" || selectedSong.url_externa.trim() === "") {
-        // Informar claramente que esta canción no está disponible en Google Drive
+        // Informar claramente que esta canción no está disponible
         await socket.sendMessage(sender, {
-          text: `❌ Lo sentimos, la canción "${selectedSong.nombre}" de ${selectedSong.artista || 'Artista desconocido'} aún no está disponible en nuestro servidor.\n\nSe están migrando todas las canciones a Google Drive. Intenta con otra opción de la lista.\n\nNo se han descontado créditos de tu cuenta.`
+          text: `❌ Lo sentimos, la canción "${selectedSong.nombre}" de ${selectedSong.artista || 'Artista desconocido'} aún no está disponible en nuestro servidor.\n\nIntenta con otra opción de la lista.\n\nNo se han descontado créditos de tu cuenta.`
         });
         
         // Resetear el estado del usuario para que pueda seguir buscando
@@ -807,18 +796,19 @@ const handleSongSelection = async (socket, sender, message, usuario, userState) 
         return; // Detener la ejecución aquí para evitar el mensaje de error genérico
       }
       
-      logger.info(`Descargando exclusivamente desde Google Drive: ${selectedSong.nombre}, ID: ${selectedSong.url_externa}`);
+      logger.info(`Descargando archivo: ${selectedSong.nombre}, ID: ${selectedSong.url_externa}`);
       
-      // Realizar la descarga desde Google Drive
+      // Realizar la descarga del archivo de música
       try {
-        const driveResult = await googleDriveService.downloadFile(selectedSong.url_externa, fileName);
-        buffer = driveResult.buffer;
+        // Asumir que tenemos una función genérica para descargar archivos
+        const fileResult = await fileService.downloadFile(selectedSong.url_externa, fileName);
+        buffer = fileResult.buffer;
         
         if (!buffer || buffer.length === 0) {
           throw new Error('El archivo descargado está vacío');
         }
         
-        logger.info(`Éxito! Archivo descargado desde Google Drive: ${fileName} (${buffer.length} bytes)`);
+        logger.info(`Éxito! Archivo descargado: ${fileName} (${buffer.length} bytes)`);
         
         // Registrar la descarga en la base de datos
         try {
@@ -826,16 +816,16 @@ const handleSongSelection = async (socket, sender, message, usuario, userState) 
             id_usuario: usuario.id,
             id_cancion: selectedSong.id,
             fecha_descarga: new Date(),
-            origen: 'google_drive' // Registrar origen de la descarga
+            origen: 'servidor_externo' // Cambiamos el origen
           });
-          logger.info(`Descarga registrada para usuario ${usuario.id} - canción ${selectedSong.id} - origen: Google Drive`);
+          logger.info(`Descarga registrada para usuario ${usuario.id} - canción ${selectedSong.id}`);
         } catch (dbError) {
           logger.error(`Error al registrar descarga en DB: ${dbError.message}`);
           // No interrumpimos el flujo por un error en el registro
         }
-      } catch (driveError) {
-        logger.error(`Error al descargar de Google Drive: ${driveError.message}`);
-        throw new Error(`Error al obtener la canción de Google Drive: ${driveError.message}`);
+      } catch (downloadError) {
+        logger.error(`Error al descargar archivo: ${downloadError.message}`);
+        throw new Error(`Error al obtener la canción: ${downloadError.message}`);
       }
       
       // Enviar el archivo al usuario (ya sabemos que tenemos buffer válido)
