@@ -537,6 +537,16 @@ const sendConversationalResponse = async (socket, sender, usuario) => {
 };
 
 /**
+ * Envía un mensaje genérico cuando no se detecta una petición clara
+ */
+const sendGenericMessage = async (socket, sender, usuario) => {
+  const message = `📱_*Responde con el número de la canción que quieres*_.\n\n` +
+    `💰 Costo por pista: 1 crédito.\n Tienes *${usuario.creditos} créditos* disponibles.`;
+    
+  await socket.sendMessage(sender, { text: message });
+};
+
+/**
  * Envía un mensaje de bienvenida cuando el usuario envía un mensaje corto
  */
 const sendWelcomeMessage = async (socket, sender, usuario) => {
@@ -955,10 +965,6 @@ async function handleDirectSongRequest(socket, sender, searchTerm, usuario) {
         es_backblaze: match.es_backblaze || false
       };
     }
-
-    // Añadir instrucciones al mensaje
-    optionsMessage += `📱_*Responde con el número de la canción que quieres*_.\n\n` +
-    `💰 Costo por pista: 1 crédito.\n Tienes *${usuario.creditos} créditos* disponibles.`;
 
     // Guardar el estado del usuario
     if (!userStates.has(sender)) {
