@@ -674,17 +674,21 @@ const handleSearch = async (socket, sender, searchTerm, usuario) => {
       songResults.push(`Presiona ${i + 1}. ${titulo.toUpperCase()}`);
     }
     
-    // Solo enviar resultados de búsqueda sin instrucciones adicionales
+    // Combinar los resultados con el recordatorio para garantizar que aparezca
     const resultMessage = [
       `🔍 *Resultados de búsqueda para "${searchTerm}"*`,
       "",
-      songResults.join("\n\n")
+      songResults.join("\n\n"),
+      "",
+      "⋮⋮⋮⋮⋮⋮⋮⋮⋮⋮⋮⋮⋮⋮⋮",
+      "",
+      `📱_*Responde con el número de la canción que quieres*_.`,
+      "",
+      `💰 Costo por pista: 1 crédito.`,
+      `Tienes *${usuario.creditos} créditos* disponibles.`
     ].join("\n");
     
     await socket.sendMessage(sender, { text: resultMessage });
-    
-    // Enviar el recordatorio como mensaje separado
-    await sendGenericMessage(socket, sender, usuario);
     
     // Guardar resultados en el estado del usuario
     userStates.set(sender, {
