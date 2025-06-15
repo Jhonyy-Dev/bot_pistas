@@ -772,21 +772,98 @@ const handleSearch = async (socket, sender, searchTerm, usuario) => {
       }).sort((a, b) => b.relevancia - a.relevancia); // Ordenar de mayor a menor puntuación
     };
     
-    // Aplicar algoritmo de relevancia
+    // ESTRATEGIA DE FILTRADO RADICAL: Eliminar resultados irrelevantes y solo mostrar los realmente relacionados
+    
+    // 1. PRIMERA FASE: Clasificar todas las canciones por relevancia
     const cancionesClasificadas = clasificarPorRelevancia(canciones, searchTerm);
     
-    // Si hay coincidencias muy fuertes (relevancia > 900), mostrar solo esas
-    const coincidenciasExactas = cancionesClasificadas.filter(c => c.relevancia > 900);
+    // 2. SEGUNDA FASE: FILTRADO AGRESIVO - Estrategia específica para cada tipo de búsqueda
+    const esTerminoGenerico = term => ['mix', 'audio', 'live'].includes(term.toLowerCase());
+    const terminos = searchTerm.toLowerCase().trim().split(/\s+/);
+    const tieneTerminosEspecificos = terminos.some(t => !esTerminoGenerico(t) && t.length >= 3);
     
-    // ESTRATEGIA INTELIGENTE: Si hay coincidencias casi exactas, mostrar solo esas (max 5)
-    // Si no hay coincidencias fuertes, mostrar hasta 30 resultados ordenados por relevancia
-    let resultadosMostrados;
-    if (coincidenciasExactas.length > 0 && coincidenciasExactas.length <= 5) {
-      logger.info(`¡Coincidencias exactas encontradas! Mostrando solo ${coincidenciasExactas.length} resultados de alta relevancia`);
-      resultadosMostrados = coincidenciasExactas;
+    // Identificar el término no genérico más importante para búsquedas mixtas
+    const terminoEspecifico = terminos.find(t => !esTerminoGenerico(t) && t.length >= 3) || '';
+    
+    // Extraer las 3 mejores coincidencias para referencia de umbral dinámico
+    const mejoresCoincidencias = cancionesClasificadas.slice(0, 3);
+    let umbralRelevancia = 0;
+    
+    if (mejoresCoincidencias.length > 0) {
+      // Si tenemos al menos una coincidencia, tomamos su puntuación como referencia
+      const mejorPuntuacion = mejoresCoincidencias[0].relevancia;
+      
+      if (mejorPuntuacion > 1500) {
+        // Si hay coincidencias muy fuertes, el umbral es 60% de la mejor
+        umbralRelevancia = mejorPuntuacion * 0.6;
+      } else if (mejorPuntuacion > 800) {
+        // Si hay coincidencias medias-fuertes, umbral es 50% 
+        umbralRelevancia = mejorPuntuacion * 0.5;
+      } else if (mejorPuntuacion > 400) {
+        // Si hay coincidencias medias, umbral es 40%
+        umbralRelevancia = mejorPuntuacion * 0.4;
+      } else {
+        // Si solo hay coincidencias débiles, umbral mínimo es 300 puntos
+        umbralRelevancia = Math.max(300, mejorPuntuacion * 0.3);
+      }
+    }
+    
+    logger.info(`Búsqueda de "${searchTerm}": Umbral de relevancia establecido en ${umbralRelevancia} puntos`);
+    
+    // 3. TERCERA FASE: FILTRADO EXTRA PARA TÉRMINOS MIX
+    let resultadosFiltrados;
+    
+    if (/^mix\s+/i.test(searchTerm) && tieneTerminosEspecificos) {
+      logger.info(`Aplicando filtrado extra para búsqueda MIX con término específico: "${terminoEspecifico}"`);
+      
+      // Este es el filtrado más estricto - Encontrar solo canciones realmente relacionadas con el término específico
+      resultadosFiltrados = cancionesClasificadas.filter(cancion => {
+        const nombre = (cancion.nombre || '').toLowerCase();
+        const artista = (cancion.artista || '').toLowerCase();
+        
+        // FILTRO RADICAL: Asegurarnos que el término específico REALMENTE esté en la canción
+        const contieneTerminoEspecifico = nombre.includes(terminoEspecifico) || artista.includes(terminoEspecifico);
+        
+        // Solo mantener resultados con el término específico Y que tengan relevancia alta
+        return contieneTerminoEspecifico && cancion.relevancia >= umbralRelevancia;
+      });
+      
+      // Si después del filtrado radical quedaron muy pocos resultados, aplicar un filtrado más flexible
+      if (resultadosFiltrados.length < 2) {
+        logger.info(`Filtrado demasiado estricto, aplicando criterios más flexibles para "${searchTerm}"`);
+        
+        // Filtrado un poco más flexible - Aceptar coincidencias fuertes aunque no tengan exactamente el término
+        resultadosFiltrados = cancionesClasificadas.filter(c => c.relevancia >= umbralRelevancia * 0.7);
+        
+        // Limitar a 10 resultados como máximo en este caso
+        resultadosFiltrados = resultadosFiltrados.slice(0, 10);
+      }
     } else {
-      // Limitar a 30 resultados para artistas como Josimar y su Yambu que tienen muchas canciones
-      resultadosMostrados = cancionesClasificadas.slice(0, 30);
+      // Para otras búsquedas, filtrar basado solo en el umbral de relevancia
+      resultadosFiltrados = cancionesClasificadas.filter(c => c.relevancia >= umbralRelevancia);
+    }
+    
+    // 4. FASE FINAL: Verificar si el filtrado dejó suficientes resultados
+    let resultadosMostrados;
+    
+    if (resultadosFiltrados.length === 0) {
+      // Si no quedaron resultados tras el filtrado, mostrar los 5 mejores
+      logger.info(`Filtrado demasiado agresivo: 0 resultados. Mostrando los 5 mejores resultados disponibles`);
+      resultadosMostrados = cancionesClasificadas.slice(0, 5);
+    } else if (resultadosFiltrados.length <= 15) {
+      // Si hay menos de 15 resultados relevantes, mostrarlos todos
+      logger.info(`Mostrando ${resultadosFiltrados.length} resultados muy relevantes`);
+      resultadosMostrados = resultadosFiltrados;
+    } else {
+      // Si hay muchos resultados relevantes, limitar a los 15 mejores
+      logger.info(`Limitando a 15 los ${resultadosFiltrados.length} resultados relevantes encontrados`);
+      resultadosMostrados = resultadosFiltrados.slice(0, 15);
+    }
+    
+    // Depuración para monitorear qué resultados se están mostrando
+    if (resultadosMostrados.length > 0) {
+      const mejorResultado = resultadosMostrados[0];
+      logger.debug(`Mejor resultado: "${mejorResultado.nombre}" con relevancia ${mejorResultado.relevancia}`);
     }
     
     logger.debug(`Mostrando ${resultadosMostrados.length} de ${canciones.length} canciones encontradas`);
