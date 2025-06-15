@@ -533,8 +533,8 @@ const sendConversationalResponse = async (socket, sender, usuario) => {
   const message = `${saludo}\n\n` +
     `Recuerda que tienes *${usuario.creditos} créditos* disponibles.\n\n` +
     `📌 *¿Cómo pedir una canción?*\n` +
-    `• "Menciona *SOLO* el nombre de la canción"\n` +
-    `• "Si no te lo muestra, menciona *SOLO* el nombre del grupo o artista"\n\n` +
+    `• "Menciona *SOLO* el nombre del grupo, canción o artista"\n` +
+    `• "Ejemplo: Nectar | Arbolito | Sosimo Sacramento"\n\n` +
     `También puedes usar *!ayuda* para ver todos los comandos disponibles.`;
     
   await socket.sendMessage(sender, { text: message });
@@ -669,9 +669,87 @@ const handleSearch = async (socket, sender, searchTerm, usuario) => {
       return;
     }
     
-    // Mostrar hasta 30 resultados (antes era solo 10)
-    // Para artistas como Josimar y su Yambu que tienen muchas canciones
-    const resultadosMostrados = canciones.length > 30 ? canciones.slice(0, 30) : canciones;
+    // NUEVO ALGORITMO DE RELEVANCIA: Clasificar y ordenar las canciones por relevancia como YouTube
+    const clasificarPorRelevancia = (canciones, searchTerm) => {
+      const terminos = searchTerm.toLowerCase().trim().split(/\s+/);
+      
+      return canciones.map(cancion => {
+        let puntos = 0;
+        const nombre = (cancion.nombre || '').toLowerCase();
+        const artista = (cancion.artista || '').toLowerCase();
+        
+        // CASO 1: Coincidencia exacta (máxima prioridad)
+        if (nombre === searchTerm.toLowerCase() || artista === searchTerm.toLowerCase()) {
+          puntos += 1000; // Prioridad máxima
+        }
+        
+        // CASO 2: Coincidencia exacta al inicio (Alta prioridad)
+        if (nombre.startsWith(searchTerm.toLowerCase()) || artista.startsWith(searchTerm.toLowerCase())) {
+          puntos += 800;
+        }
+        
+        // CASO 3: El término de búsqueda completo está contenido en el nombre o artista
+        if (nombre.includes(searchTerm.toLowerCase()) || artista.includes(searchTerm.toLowerCase())) {
+          puntos += 600;
+        }
+        
+        // CASO 4: Todas las palabras del término están presentes (orden no importa)
+        const todasPalabrasPresentes = terminos.every(termino => 
+          nombre.includes(termino) || artista.includes(termino)
+        );
+        if (todasPalabrasPresentes) {
+          puntos += 500;
+        }
+        
+        // CASO 5: Mayoría de términos presentes
+        let terminosPresentes = 0;
+        terminos.forEach(termino => {
+          if (nombre.includes(termino) || artista.includes(termino)) {
+            terminosPresentes++;
+            puntos += 100; // Puntos por cada término presente
+          }
+        });
+        
+        // CASO 6: Coincidencia en orden pero con palabras en el medio
+        let ultimaPosicion = -1;
+        let enOrden = true;
+        for (const termino of terminos) {
+          const posEnNombre = nombre.indexOf(termino);
+          if (posEnNombre !== -1) {
+            if (posEnNombre < ultimaPosicion) {
+              enOrden = false;
+            }
+            ultimaPosicion = posEnNombre;
+          }
+        }
+        if (enOrden && ultimaPosicion !== -1) {
+          puntos += 300;
+        }
+        
+        // Dar pequeña ventaja a canciones con nombres más cortos (son generalmente más relevantes)
+        puntos += (50 - Math.min(50, nombre.length)) / 2;
+        
+        // Asignar puntuación final
+        return { ...cancion, relevancia: puntos };
+      }).sort((a, b) => b.relevancia - a.relevancia); // Ordenar de mayor a menor puntuación
+    };
+    
+    // Aplicar algoritmo de relevancia
+    const cancionesClasificadas = clasificarPorRelevancia(canciones, searchTerm);
+    
+    // Si hay coincidencias muy fuertes (relevancia > 900), mostrar solo esas
+    const coincidenciasExactas = cancionesClasificadas.filter(c => c.relevancia > 900);
+    
+    // ESTRATEGIA INTELIGENTE: Si hay coincidencias casi exactas, mostrar solo esas (max 5)
+    // Si no hay coincidencias fuertes, mostrar hasta 30 resultados ordenados por relevancia
+    let resultadosMostrados;
+    if (coincidenciasExactas.length > 0 && coincidenciasExactas.length <= 5) {
+      logger.info(`¡Coincidencias exactas encontradas! Mostrando solo ${coincidenciasExactas.length} resultados de alta relevancia`);
+      resultadosMostrados = coincidenciasExactas;
+    } else {
+      // Limitar a 30 resultados para artistas como Josimar y su Yambu que tienen muchas canciones
+      resultadosMostrados = cancionesClasificadas.slice(0, 30);
+    }
     
     logger.debug(`Mostrando ${resultadosMostrados.length} de ${canciones.length} canciones encontradas`);
     
