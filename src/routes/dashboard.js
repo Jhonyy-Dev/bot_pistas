@@ -358,8 +358,12 @@ async function obtenerRecuentoMp3Backblaze() {
   try {
     logger.info('Obteniendo recuento total de archivos MP3 desde Backblaze B2...');
     
-    // Solicitar todos los archivos de Backblaze con paginación
-    const archivos = await backblazeService.listarArchivos('', 10000);
+    // Solicitar todos los archivos de Backblaze con paginación (asegurarse que el límite sea un número)
+    const limitePaginacion = 10000; // número definido explícitamente
+    const archivos = await backblazeService.listarArchivos('', limitePaginacion);
+    
+    // Registrar el número de archivos totales recibidos de Backblaze para debugging
+    logger.info(`Total de archivos recibidos de Backblaze: ${archivos.length}`);
     
     // Filtrar solo los archivos MP3
     const archivosMp3 = archivos.filter(archivo => 

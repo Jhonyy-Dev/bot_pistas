@@ -696,6 +696,7 @@
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 segundos timeout
                 
+                // Obtener primero el estado de conexión y QR de /api/dashboard-data
                 const response = await fetch('/dashboard/api/dashboard-data', {
                     signal: controller.signal,
                     cache: 'no-store', // Evitar caché para siempre obtener datos frescos
@@ -711,15 +712,42 @@
                     throw new Error(`Error HTTP: ${response.status}`);
                 }
                 
-                // Intentar parsear la respuesta como JSON
                 let responseText = await response.text();
                 let data;
                 
                 try {
                     data = JSON.parse(responseText);
+                    console.log('Datos del dashboard recibidos:', data);
                 } catch (parseError) {
                     console.error('Error al parsear JSON:', responseText);
                     throw new Error('Respuesta del servidor no es un JSON válido');
+                }
+                
+                // Ahora obtener también los datos de /api/status para tener conteos exactos
+                const statusResponse = await fetch('/api/status', {
+                    cache: 'no-store',
+                    headers: {
+                        'Cache-Control': 'no-cache',
+                        'Pragma': 'no-cache'
+                    }
+                });
+                
+                if (statusResponse.ok) {
+                    const statusData = await statusResponse.json();
+                    console.log('Datos de estado recibidos:', statusData);
+                    
+                    // Actualizar los datos con información más precisa de /api/status
+                    if (statusData) {
+                        // Actualizar counters con datos más precisos de la API status
+                        if (!data.stats) data.stats = {};
+                        data.stats.usuariosRegistrados = statusData.totalUsers || data.stats.usuariosRegistrados;
+                        data.stats.cancionesDisponibles = statusData.totalSongs || data.stats.cancionesDisponibles;
+                        data.stats.descargasTotales = statusData.totalDownloads || data.stats.descargasTotales;
+                        
+                        console.log('Datos combinados:', data.stats);
+                    }
+                } else {
+                    console.warn('No se pudo obtener datos de /api/status, usando solo los datos de dashboard');
                 }
                 
                 // Actualizar estado de conexión
