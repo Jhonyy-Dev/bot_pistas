@@ -999,25 +999,36 @@ async function handleDirectSongRequest(socket, sender, searchTerm, usuario) {
 
 /**
  * Procesa un archivo de canción seleccionado y lo envía al usuario
+ * @param {Object} socket - Socket de WhatsApp
+ * @param {string} sender - ID del remitente
+ * @param {string} foundFileName - Nombre del archivo encontrado
+ * @param {Object} selectedSong - Información de la canción seleccionada
+ * @param {Object} usuario - Información del usuario
+ * @returns {Promise<boolean>} - True si se procesó correctamente
  */
 async function processSongFile(socket, sender, foundFileName, selectedSong, usuario) {
   try {
     // Obtener información de la canción seleccionada
     let song;
     
+    // Normalizar el nombre del archivo para búsqueda
+    const normalizedFileName = foundFileName.toLowerCase();
+    
     if (selectedSong && typeof selectedSong === 'object') {
-      // Si selectedSong es un objeto, intentar obtener la información de la canción
+      // Si ya tenemos un objeto con la información de la canción
       if (selectedSong[foundFileName]) {
-        // Si existe una entrada directa con el nombre del archivo
         song = selectedSong[foundFileName];
       } else {
-        // Buscar en todas las claves por si el nombre del archivo está almacenado de forma diferente
+        // Buscar con diferentes claves posibles
         const keys = Object.keys(selectedSong);
         for (const key of keys) {
-          if (key.toLowerCase() === foundFileName.toLowerCase() || 
-              (selectedSong[key].archivo_nombre && 
-               selectedSong[key].archivo_nombre.toLowerCase() === foundFileName.toLowerCase())) {
-            song = selectedSong[key];
+          const currentSong = selectedSong[key];
+          const keyLower = key.toLowerCase();
+          const nombreArchivo = currentSong.archivo_nombre || currentSong.nombre || "";
+          
+          if (keyLower === normalizedFileName || 
+              nombreArchivo.toLowerCase() === normalizedFileName) {
+            song = currentSong;
             break;
           }
         }
@@ -1028,76 +1039,64 @@ async function processSongFile(socket, sender, foundFileName, selectedSong, usua
     if (!song) {
       song = { 
         nombre: foundFileName.replace(/\.mp3$/i, '').replace(/_/g, ' '),
-        archivo_nombre: foundFileName,
-        es_backblaze: true // Asumimos que es de Backblaze si no tenemos más información
+        archivo_nombre: foundFileName
       };
       logger.info(`Creando información básica para la canción: ${foundFileName}`);
     }
     
-    // Verificar si es un archivo de Backblaze B2
-    if (song.es_backblaze) {
-      logger.info(`Procesando archivo de Backblaze B2: ${foundFileName}`);
+    // Notificar al usuario que estamos descargando
+    await socket.sendMessage(sender, {
+      text: `⏳ Descargando "${song.nombre}" desde nuestro servidor en la nube...\nEsto puede tomar unos segundos.`
+    });
+    
+    try {    
+      // Descargar el archivo desde Backblaze B2
+      logger.info(`Descargando canción desde Backblaze: ${foundFileName}`);
+      const { buffer, rutaArchivo } = await backblazeController.descargarCancion(foundFileName);
       
-      try {
-        // Notificar al usuario que estamos descargando
-        await socket.sendMessage(sender, {
-          text: `⏳ Descargando "${song.nombre}" desde nuestro servidor en la nube...\nEsto puede tomar unos segundos.`
-        });
-        
-        // Descargar el archivo desde Backblaze B2
-        const { buffer, rutaArchivo } = await backblazeController.descargarCancion(foundFileName);
-        
-        // Enviar la canción al usuario
-        await sendSongToUser(socket, sender, buffer, foundFileName, song, usuario);
-        
-        // Registrar reproducción si es necesario
-        await backblazeController.registrarReproduccion(song, usuario.numero_telefono);
-        
-        // Limpiar archivos temporales después de un tiempo
-        setTimeout(() => {
-          try {
-            if (fs.existsSync(rutaArchivo)) {
-              fs.unlinkSync(rutaArchivo);
-              logger.info(`Archivo temporal eliminado: ${rutaArchivo}`);
-            }
-          } catch (cleanupError) {
-            logger.error(`Error al limpiar archivo temporal: ${cleanupError.message}`);
-          }
-        }, 5 * 60 * 1000); // 5 minutos
-      } catch (backblazeError) {
-        logger.error(`Error al procesar archivo de Backblaze B2: ${backblazeError.message}`);
-        await socket.sendMessage(sender, {
-          text: `❌ Lo sentimos, ocurrió un error al descargar la canción desde nuestro servidor en la nube.\n\n` +
-                `No se han descontado créditos de tu cuenta.\n\n` +
-                `Tienes ${usuario.creditos} créditos disponibles.`
-        });
-        throw backblazeError;
+      if (!buffer) {
+        throw new Error(`No se pudo obtener el buffer para el archivo: ${foundFileName}`);
       }
-    } else {
-      // Procesar archivo local
-      logger.info(`Procesando archivo local: ${foundFileName}`);
-      
-      const mp3Folder = process.env.MP3_FOLDER || './mp3';
-      const filePath = path.join(mp3Folder, foundFileName);
-      
-      // Verificar si el archivo existe localmente
-      const fileExists = await fs.pathExists(filePath);
-      
-      if (!fileExists) {
-        logger.error(`Archivo local no encontrado: ${filePath}`);
-        await socket.sendMessage(sender, {
-          text: `❌ Lo sentimos, no se encontró el archivo de la canción seleccionada.\n\n` +
-                `No se han descontado créditos de tu cuenta.\n\n` +
-                `Tienes ${usuario.creditos} créditos disponibles.`
-        });
-        return;
-      }
-      
-      // Leer el archivo como buffer
-      const buffer = await fs.readFile(filePath);
       
       // Enviar la canción al usuario
       await sendSongToUser(socket, sender, buffer, foundFileName, song, usuario);
+      
+      // Registrar reproducción si es necesario
+      try {
+        await backblazeController.registrarReproduccion(song, usuario.numero_telefono);
+      } catch (regError) {
+        logger.warn(`No se pudo registrar la reproducción: ${regError.message}`);
+        // No interrumpimos el flujo por esto
+      }
+      
+      // Limpiar archivos temporales después de un tiempo
+      if (rutaArchivo) {
+        setTimeout(() => {
+          try {
+            if (fs.existsSync(rutaArchivo)) {
+              fs.unlink(rutaArchivo, (err) => {
+                if (err) {
+                  logger.debug(`Error al eliminar archivo temporal: ${err.message}`);
+                } else {
+                  logger.debug(`Archivo temporal eliminado: ${rutaArchivo}`);
+                }
+              });
+            }
+          } catch (cleanupError) {
+            logger.debug(`Error al limpiar archivo temporal: ${cleanupError.message}`);
+          }
+        }, 60 * 1000); // 1 minuto
+      }
+      
+      return true;
+    } catch (downloadError) {
+      logger.error(`Error al descargar archivo de Backblaze B2: ${downloadError.message}`);
+      await socket.sendMessage(sender, {
+        text: `❌ Lo sentimos, ocurrió un error al descargar la canción desde nuestro servidor.\n\n` +
+              `No se han descontado créditos de tu cuenta.\n\n` +
+              `Tienes ${usuario.creditos} créditos disponibles.`
+      });
+      throw downloadError;
     }
   } catch (error) {
     logger.error(`Error al procesar archivo de canción: ${error.message}`);
@@ -1175,10 +1174,37 @@ async function sendSongToUser(socket, sender, buffer, fileName, song, usuario) {
     // Preparar el archivo para descarga con un caption más ligero
     const caption = `🎵 *${song.nombre.toUpperCase()}*\n\n*Subido por Jhonatan*`;
     
-    // Iniciar la limpieza de archivos temporales en segundo plano
-    // No esperamos a que termine para continuar con el flujo principal
-    const cleanupPromise = localMp3Service.cleanupTempFiles()
-      .catch(err => logger.error(`Error al limpiar archivos temporales: ${err.message}`));
+    // Cleanup manual de archivos temporales (sin usar localMp3Service)
+    try {
+      // Intentar limpiar archivos temporales descargados de Backblaze
+      const tempDir = path.join(process.cwd(), process.env.MP3_FOLDER || 'temp');
+      // Programamos la limpieza para después sin bloquear el flujo
+      setTimeout(() => {
+        try {
+          if (fs.existsSync(tempDir)) {
+            // Leer archivos y eliminar los que tienen más de 10 minutos
+            fs.readdir(tempDir, (err, files) => {
+              if (!err) {
+                const now = Date.now();
+                files.forEach(file => {
+                  const filePath = path.join(tempDir, file);
+                  fs.stat(filePath, (statErr, stats) => {
+                    if (!statErr && (now - stats.mtimeMs) > 600000) { // 10 minutos
+                      fs.unlink(filePath, () => {});
+                    }
+                  });
+                });
+              }
+            });
+          }
+        } catch (cleanErr) {
+          // Ignoramos errores en la limpieza
+        }
+      }, 1000);
+    } catch (err) {
+      // No interrumpimos el flujo por errores de limpieza
+      logger.debug(`Nota: Error al limpiar archivos temporales: ${err.message}`);
+    }
     
     // Enviar mensaje de preparación y archivo en paralelo
     // Esto reduce el tiempo de espera percibido por el usuario
