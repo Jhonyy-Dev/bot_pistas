@@ -701,35 +701,9 @@ const handleSearch = async (socket, sender, searchTerm, usuario) => {
     
     // Usaremos setTimeout para asegurarnos que este mensaje se envíe DESPUÉS de los resultados
     // y con mayor prioridad, como mensaje completamente separado
-    setTimeout(async () => {
-      try {
-        // SIEMPRE enviar el recordatorio, sin condiciones
-        logger.info(`[CRITICAL-SEND] Enviando recordatorio para ${sender}...`);
-        
-        // Mensaje exactamente en el formato solicitado
-        const reminderMessage = `📱*DAME EL NUMERO DE LA CANCION QUE QUIERES*\n\n💰 Costo por pista: 1 crédito.\n Tienes *${usuario.creditos} créditos* disponibles.`;
-        
-        // GARANTIZAR el envío con await
-        await socket.sendMessage(sender, {
-          text: reminderMessage,
-          // Estos parámetros garantizan que WhatsApp lo trate como mensaje separado
-          ctwaContext: { "disappearingMode": false },
-          ephemeralSettingTimestamp: Date.now(),
-          participant: sender
-        });
-        
-        logger.info(`[SUCCESS] Recordatorio enviado con éxito para ${sender}`);
-      } catch (error) {
-        logger.error(`[CRITICAL-ERROR] Error al enviar recordatorio: ${error.message}`);
-        // Intentar nuevamente con otro método si falló
-        try {
-          await socket.sendMessage(sender, { text: `📱*DAME EL NUMERO DE LA CANCION QUE QUIERES*\n\n💰 Costo por pista: 1 crédito.\n Tienes *${usuario.creditos} créditos* disponibles.` });
-          logger.info(`[SUCCESS] Recordatorio enviado en segundo intento para ${sender}`);
-        } catch (retryError) {
-          logger.error(`[FATAL-ERROR] Fallo total al enviar recordatorio: ${retryError.message}`);
-        }
-      }
-    }, 1500); // Esperar 1.5 segundos después de enviar resultados para garantizar orden correcto
+    // Este espacio se dejó intencionalmente en blanco
+    // El recordatorio ya no se envía desde aquí
+    logger.info(`[INFO] Saltando envío de recordatorio desde este punto para ${sender}...`);
     
     // Guardar resultados en el estado del usuario
     userStates.set(sender, {
