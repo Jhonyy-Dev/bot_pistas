@@ -76,12 +76,17 @@ const processMessage = async (socket, sender, message, rawMessage) => {
         
         logger.info(`Usuario seleccionó la opción ${selectedIndex + 1}: ${fileName}`);
         
+        // Marcar inmediatamente que el usuario está procesando una descarga para evitar mensajes duplicados
+        userState.processingDownload = true;
+        userState.awaitingSongSelection = false; // Ya no está esperando selección
+        userStates.set(sender, userState);
+        
         try {
           // Procesar y enviar la canción seleccionada
           await processSongFile(socket, sender, fileName, selectedSong, usuario);
           
           // Limpiar el estado de selección
-          userState.awaitingSongSelection = false;
+          userState.processingDownload = false;
           userState.songMatches = null;
           userState.step = 'inicio';
           userStates.set(sender, userState);
@@ -707,10 +712,8 @@ const handleSearch = async (socket, sender, searchTerm, usuario) => {
     
     // Preparar el mensaje exactamente en el formato solicitado
     const reminderContent = {
-      text: `📱_*Responde con el número de la canción que quieres*_.
-
-💰 Costo por pista: 1 crédito.
- Tienes *${usuario.creditos} créditos* disponibles.`,
+      text: `📱*DAME EL NUMERO DE LA CANCION QUE QUIERES*\n\n
+💰 Costo por pista: 1 crédito.\n Tienes *${usuario.creditos} créditos* disponibles.`,
       // Configuración adicional que usa WhatsApp oficial para mensajes separados
       ctwaContext: {
         "disappearingMode": false
@@ -721,6 +724,13 @@ const handleSearch = async (socket, sender, searchTerm, usuario) => {
     
     // Enviar como mensaje separado con alta prioridad
     try {
+      // Asegurarse de que el usuario no esté en medio de un proceso de descarga
+      const currentState = userStates.get(sender) || {};
+      if (currentState.processingDownload) {
+        logger.info(`[SKIP] No enviando recordatorio para ${sender} porque ya está descargando una canción`);
+        return;
+      }
+      
       logger.info(`[CRITICAL-SEND] Enviando recordatorio para ${sender}...`);
       // Usar el método asíncrono nativo sin await para evitar bloqueos
       socket.sendMessage(sender, reminderContent)
