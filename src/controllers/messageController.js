@@ -609,12 +609,12 @@ const handleSearch = async (socket, sender, searchTerm, usuario) => {
     // ELIMINAR LA PALABRA MIX: Filtrar la palabra "mix" (y variaciones) del término de búsqueda
     const originalTerm = searchTerm;
     
-    // Eliminar la palabra "mix" del inicio, incluyendo variantes con espacios y signos
+    // Eliminar la palabra "mix" y combinaciones con artículos del inicio
     const cleanedTerm = searchTerm
-      .replace(/^\s*mix\s+/i, '') // Quitar "mix " del inicio
-      .replace(/^\s*mix-\s*/i, '') // Quitar "mix-" del inicio
-      .replace(/^\s*mix:\s*/i, '') // Quitar "mix:" del inicio
-      .replace(/\s+mix\s+/i, ' ') // Quitar "mix" entre palabras
+      // Expresión regular mejorada para manejar "mix" con artículos
+      .replace(/^\s*mix\s+(?:el|la|los|las|un|una|unos|unas)?\s*/i, '') // Quitar "mix" + artículo opcional
+      .replace(/^\s*mix(?:-|:|\.)\s*(?:el|la|los|las|un|una|unos|unas)?\s*/i, '') // Quitar "mix-/:/. + artículo opcional
+      .replace(/\s+mix\s+(?:el|la|los|las|un|una|unos|unas)?\s*/i, ' ') // Quitar "mix" + artículo entre palabras
       .trim();
     
     // Si el término limpio es diferente del original, registrarlo para depuración
@@ -1098,12 +1098,12 @@ async function handleDirectSongRequest(socket, sender, searchTerm, usuario) {
     // ELIMINAR LA PALABRA MIX: Filtrar la palabra "mix" (y variaciones) del término de búsqueda
     const originalTerm = searchTerm;
     
-    // Eliminar la palabra "mix" del inicio, incluyendo variantes con espacios y signos
+    // Eliminar la palabra "mix" y combinaciones con artículos del inicio
     const cleanedTerm = searchTerm
-      .replace(/^\s*mix\s+/i, '') // Quitar "mix " del inicio
-      .replace(/^\s*mix-\s*/i, '') // Quitar "mix-" del inicio
-      .replace(/^\s*mix:\s*/i, '') // Quitar "mix:" del inicio
-      .replace(/\s+mix\s+/i, ' ') // Quitar "mix" entre palabras
+      // Expresión regular mejorada para manejar "mix" con artículos
+      .replace(/^\s*mix\s+(?:el|la|los|las|un|una|unos|unas)?\s*/i, '') // Quitar "mix" + artículo opcional
+      .replace(/^\s*mix(?:-|:|\.)\s*(?:el|la|los|las|un|una|unos|unas)?\s*/i, '') // Quitar "mix-/:/. + artículo opcional
+      .replace(/\s+mix\s+(?:el|la|los|las|un|una|unos|unas)?\s*/i, ' ') // Quitar "mix" + artículo entre palabras
       .trim();
     
     // Si el término limpio es diferente del original, registrarlo para depuración y usarlo
