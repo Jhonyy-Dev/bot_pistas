@@ -669,62 +669,100 @@ const handleSearch = async (socket, sender, searchTerm, usuario) => {
       return;
     }
     
-    // NUEVO ALGORITMO DE RELEVANCIA: Clasificar y ordenar las canciones por relevancia como YouTube
+    // NUEVO ALGORITMO DE RELEVANCIA MEJORADO ESTILO YOUTUBE: Clasificar y ordenar las canciones por relevancia
     const clasificarPorRelevancia = (canciones, searchTerm) => {
-      const terminos = searchTerm.toLowerCase().trim().split(/\s+/);
+      // Detectar si estamos buscando un mix específico
+      const busquedaMix = /mix\s+[a-zñáéíóúü]+/i.test(searchTerm.toLowerCase());
+      const terminoGenerico = /^mix\s*$/i.test(searchTerm.toLowerCase());
+      
+      // Identificar términos comunes y términos de alto valor
+      const terminosComunes = ['mix', 'live', 'en', 'vivo', 'audio', 'oficial', 'video'];
+      const terminosDeAltoValor = searchTerm.toLowerCase().trim().split(/\s+/).filter(t => !terminosComunes.includes(t));
+      
+      // Si la búsqueda es "mix algo", el "algo" es MUY importante para la relevancia
+      const segundoTerminoMix = busquedaMix ? searchTerm.toLowerCase().replace(/mix\s+/i, '') : '';
+      
+      logger.debug(`Búsqueda especial: ${busquedaMix ? 'SÍ' : 'NO'}, Segundo término: "${segundoTerminoMix}", Términos de alto valor: ${terminosDeAltoValor.join(', ')}`);
       
       return canciones.map(cancion => {
         let puntos = 0;
         const nombre = (cancion.nombre || '').toLowerCase();
         const artista = (cancion.artista || '').toLowerCase();
+        const ruta = (cancion.ruta_archivo || '').toLowerCase();
         
-        // CASO 1: Coincidencia exacta (máxima prioridad)
-        if (nombre === searchTerm.toLowerCase() || artista === searchTerm.toLowerCase()) {
-          puntos += 1000; // Prioridad máxima
+        // CASO ESPECIAL PARA MIX: Si buscamos "mix algo", dar máxima prioridad a canciones que empiezan con "mix algo"
+        if (busquedaMix && !terminoGenerico) {
+          // Coincidencia perfecta con el formato "MIX NOMBREGRUPO" (máxima prioridad)
+          if (nombre.startsWith(`mix ${segundoTerminoMix}`) || nombre.includes(` - mix ${segundoTerminoMix}`)) {
+            puntos += 2000;
+          }
+          
+          // Título contiene exactamente el término completo en ese orden
+          if (nombre.includes(searchTerm.toLowerCase())) {
+            // Priorizar si está al inicio del nombre
+            if (nombre.indexOf(searchTerm.toLowerCase()) === 0) {
+              puntos += 1500;
+            } else {
+              puntos += 1000;
+            }
+          }
+          
+          // El segundo término es MUY importante en búsquedas con MIX
+          if (segundoTerminoMix && (nombre.includes(segundoTerminoMix) || artista.includes(segundoTerminoMix))) {
+            puntos += 800;
+            
+            // Aún mejor si está en el formato "MIX [SEGUNDO TÉRMINO]"
+            const regexFormato = new RegExp(`mix\s+.*${segundoTerminoMix}|${segundoTerminoMix}.*mix`, 'i');
+            if (regexFormato.test(nombre)) {
+              puntos += 500;
+            }
+          }
+        } else {
+          // CASO 1: Coincidencia exacta (máxima prioridad)
+          if (nombre === searchTerm.toLowerCase() || artista === searchTerm.toLowerCase()) {
+            puntos += 1000;
+          }
+          
+          // CASO 2: Coincidencia exacta al inicio (Alta prioridad)
+          if (nombre.startsWith(searchTerm.toLowerCase()) || artista.startsWith(searchTerm.toLowerCase())) {
+            puntos += 800;
+          }
+          
+          // CASO 3: El término de búsqueda completo está contenido
+          if (nombre.includes(searchTerm.toLowerCase()) || artista.includes(searchTerm.toLowerCase())) {
+            puntos += 600;
+          }
         }
         
-        // CASO 2: Coincidencia exacta al inicio (Alta prioridad)
-        if (nombre.startsWith(searchTerm.toLowerCase()) || artista.startsWith(searchTerm.toLowerCase())) {
-          puntos += 800;
-        }
-        
-        // CASO 3: El término de búsqueda completo está contenido en el nombre o artista
-        if (nombre.includes(searchTerm.toLowerCase()) || artista.includes(searchTerm.toLowerCase())) {
-          puntos += 600;
-        }
-        
-        // CASO 4: Todas las palabras del término están presentes (orden no importa)
-        const todasPalabrasPresentes = terminos.every(termino => 
-          nombre.includes(termino) || artista.includes(termino)
-        );
-        if (todasPalabrasPresentes) {
-          puntos += 500;
-        }
-        
-        // CASO 5: Mayoría de términos presentes
-        let terminosPresentes = 0;
-        terminos.forEach(termino => {
-          if (nombre.includes(termino) || artista.includes(termino)) {
-            terminosPresentes++;
-            puntos += 100; // Puntos por cada término presente
+        // Para todas las búsquedas: Dar mayor prioridad a los términos de alto valor
+        // (esto es crucial para búsquedas como "mix lambada", donde "lambada" es el término realmente distintivo)
+        terminosDeAltoValor.forEach(termino => {
+          if (termino.length < 3) return; // Ignorar términos muy cortos
+          
+          // Mayor puntuación cuando el término de alto valor está presente
+          if (nombre.includes(termino)) {
+            puntos += 400;
+            
+            // Bonus si está al inicio del nombre (después de "mix" si es búsqueda de mix)
+            if (busquedaMix) {
+              if (nombre.match(new RegExp(`mix\s+${termino}|${termino}\s+mix`, 'i'))) {
+                puntos += 350;
+              }
+            } else if (nombre.startsWith(termino)) {
+              puntos += 300;
+            }
+          }
+          
+          // También importante si está en el artista
+          if (artista.includes(termino)) {
+            puntos += 200;
+          }
+          
+          // O en la ruta del archivo (menos importante)
+          if (ruta.includes(termino)) {
+            puntos += 100;
           }
         });
-        
-        // CASO 6: Coincidencia en orden pero con palabras en el medio
-        let ultimaPosicion = -1;
-        let enOrden = true;
-        for (const termino of terminos) {
-          const posEnNombre = nombre.indexOf(termino);
-          if (posEnNombre !== -1) {
-            if (posEnNombre < ultimaPosicion) {
-              enOrden = false;
-            }
-            ultimaPosicion = posEnNombre;
-          }
-        }
-        if (enOrden && ultimaPosicion !== -1) {
-          puntos += 300;
-        }
         
         // Dar pequeña ventaja a canciones con nombres más cortos (son generalmente más relevantes)
         puntos += (50 - Math.min(50, nombre.length)) / 2;
