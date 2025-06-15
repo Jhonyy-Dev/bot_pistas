@@ -21,11 +21,11 @@ const userStates = new Map();
 
 // Frases de saludo aleatorias para dar variedad
 const saludos = [
-  '¡Hola! ¿Qué música estás buscando hoy?',
-  '¡Bienvenido! ¿Qué canción te gustaría escuchar?',
-  '¡Qué tal! Estoy aquí para ayudarte a encontrar tu música favorita',
-  '¡Hola! Dime qué artista o canción estás buscando',
-  '¡Saludos! ¿Qué melodía quieres descargar hoy?'
+  '¡Hola👋! 🎵 ¿Qué música estás buscando hoy?',
+  '¡Bienvenido👋! 🎶 ¿Qué canción te gustaría escuchar?',
+  '¡Qué tal👋! 🎧 Estoy aquí para ayudarte a encontrar tu música favorita',
+  '¡Hola👋! 🎤 Dime qué grupo o canción estás buscando',
+  '¡Saludos👋! 📀 ¿Qué melodía quieres descargar hoy?'
 ];
 
 // Respuestas para cuando no se encuentra una coincidencia exacta
@@ -532,7 +532,7 @@ const sendConversationalResponse = async (socket, sender, usuario) => {
   
   const message = `${saludo}\n\n` +
     `Recuerda que tienes *${usuario.creditos} créditos* disponibles.\n\n` +
-    `*¿Cómo pedir una canción?*\n` +
+    `📌 *¿Cómo pedir una canción?*\n` +
     `• "Menciona *SOLO* el nombre de la canción"\n` +
     `• "Si no te lo muestra, menciona *SOLO* el nombre del grupo o artista"\n\n` +
     `También puedes usar *!ayuda* para ver todos los comandos disponibles.`;
