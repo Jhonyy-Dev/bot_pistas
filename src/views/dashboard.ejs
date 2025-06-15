@@ -461,9 +461,42 @@
                 // Actualizar estado interno
                 dashboardState.stats = { users, songs, downloads };
                 
+                // Actualizar los logs del sistema con los nuevos valores
+                updateSystemLogs(users, songs, downloads);
+                
                 console.log('Estadísticas actualizadas:', { users, songs, downloads });
             } catch (error) {
                 console.error('Error al actualizar estadísticas:', error);
+            }
+        }
+        
+        // Actualizar logs del sistema con valores reales
+        function updateSystemLogs(users, songs, downloads) {
+            try {
+                const logsContainer = document.getElementById('logsContainer');
+                const now = new Date();
+                const timeString = now.toLocaleTimeString('es-ES');
+                
+                // Actualizar los logs existentes o crear nuevos
+                const currentHtml = logsContainer.innerHTML;
+                const updatedLogs = `
+                    <div class="log-entry log-info">
+                        <span class="text-muted">${timeString}</span> Bot iniciado correctamente
+                    </div>
+                    <div class="log-entry log-info">
+                        <span class="text-muted">${timeString}</span> ${users} usuarios registrados
+                    </div>
+                    <div class="log-entry log-info">
+                        <span class="text-muted">${timeString}</span> ${songs} canciones disponibles
+                    </div>
+                    <div class="log-entry log-info">
+                        <span class="text-muted">${timeString}</span> ${downloads} descargas totales
+                    </div>
+                `;
+                
+                logsContainer.innerHTML = updatedLogs;
+            } catch (error) {
+                console.error('Error al actualizar logs del sistema:', error);
             }
         }
         

@@ -11,6 +11,7 @@ const { Usuario, Cancion, TransaccionCredito, Descarga } = require('../database/
 const { sequelize } = require('../config/database');
 const { Op } = require('sequelize');
 const logger = require('../config/logger');
+const backblazeService = require('../services/backblazeService');
 
 // Estado global del bot
 let botStatus = {
@@ -144,11 +145,23 @@ router.get('/api/dashboard-data', async (req, res) => {
 router.get('/api/status', async (req, res) => {
   try {
     // Actualizar estadísticas en tiempo real
-    const [totalUsers, totalSongs, totalDownloads] = await Promise.all([
+    const [totalUsers, totalCancionesDB, totalDownloads] = await Promise.all([
       Usuario.count(),
       Cancion.count(),
-      TransaccionCredito.count({ where: { tipo: 'descarga' } })
+      Descarga.count()
     ]);
+    
+    // Obtener recuento real de MP3 desde Backblaze si es posible
+    let totalSongs = totalCancionesDB;
+    try {
+      const totalCancionesBackblaze = await obtenerRecuentoMp3Backblaze();
+      if (totalCancionesBackblaze > 0) {
+        totalSongs = totalCancionesBackblaze;
+      }
+    } catch (backblazeError) {
+      logger.warn(`No se pudo obtener recuento de Backblaze: ${backblazeError.message}`);
+      // Seguimos con totalSongs = totalCancionesDB
+    }
 
     const currentStatus = {
       ...botStatus,
@@ -338,15 +351,48 @@ router.get('/api/stats', async (req, res) => {
 });
 
 /**
+ * Función para obtener el recuento real de archivos MP3 en Backblaze B2
+ * @returns {Promise<number>} Número total de archivos MP3
+ */
+async function obtenerRecuentoMp3Backblaze() {
+  try {
+    logger.info('Obteniendo recuento total de archivos MP3 desde Backblaze B2...');
+    
+    // Solicitar todos los archivos de Backblaze con paginación
+    const archivos = await backblazeService.listarArchivos('', 10000);
+    
+    // Filtrar solo los archivos MP3
+    const archivosMp3 = archivos.filter(archivo => 
+      archivo.Key && archivo.Key.toLowerCase().endsWith('.mp3')
+    );
+    
+    logger.info(`Total de archivos MP3 en Backblaze: ${archivosMp3.length}`);
+    return archivosMp3.length;
+  } catch (error) {
+    logger.error(`Error obteniendo recuento de archivos Backblaze: ${error.message}`);
+    return 0; // Valor por defecto en caso de error
+  }
+}
+
+/**
  * Función para obtener estadísticas completas y profesionales
  */
 async function obtenerEstadisticasCompletas() {
   try {
+    // Obtener recuento real de archivos MP3 desde Backblaze B2
+    let totalCancionesBackblaze = 0;
+    try {
+      totalCancionesBackblaze = await obtenerRecuentoMp3Backblaze();
+    } catch (backblazeError) {
+      logger.error(`Error obteniendo recuento de Backblaze: ${backblazeError.message}`);
+      // Continuamos con el resto de estadísticas
+    }
+    
     // Consultas paralelas para optimizar rendimiento
     const [
       // Estadísticas básicas
       totalUsuarios,
-      totalCanciones,
+      totalCanciones, // Este es el recuento de la base de datos solamente
       totalDescargas,
       
       // Usuarios más activos
@@ -504,11 +550,17 @@ async function obtenerEstadisticasCompletas() {
       `, { type: sequelize.QueryTypes.SELECT })
     ]);
 
+    // Usar la cantidad real de archivos MP3 de Backblaze como totalCanciones
+    // Si hay un error obteniendo los archivos de Backblaze, usar el recuento de la base de datos como fallback
+    const cancionesDisponibles = totalCancionesBackblaze > 0 ? totalCancionesBackblaze : totalCanciones;
+    
+    logger.info(`Estadísticas obtenidas: Usuarios=${totalUsuarios}, Canciones=${cancionesDisponibles}, Descargas=${totalDescargas}`);
+    
     return {
       // Resumen general
       resumen: {
         totalUsuarios,
-        totalCanciones,
+        totalCanciones: cancionesDisponibles, // Usar el recuento real de Backblaze
         totalDescargas,
       },
       
